@@ -1,0 +1,57 @@
+<!--
+  side_panel.html — Roundtable のサイドパネル本体
+  ============================================================
+  これはChromeの「サイドパネル」（画面右側にスライド表示される領域）に
+  読み込まれるHTMLファイル。
+  ユーザーがツールバーのRoundtableアイコンをクリックすると開く。
+
+  Phase 0 では中身は空（プレースホルダ）でOK。
+  Phase 1以降で、議論UI（メッセージ一覧、入力欄、指名ボタンなど）を
+  ここに実装していく。
+  ============================================================
+-->
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Roundtable</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 0;
+        padding: 16px;
+        color: #1f2328;
+        background: #ffffff;
+      }
+      .placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 80vh;
+        color: #6b7280;
+        text-align: center;
+      }
+      .placeholder h1 {
+        font-size: 18px;
+        margin: 0 0 8px;
+        color: #1f2328;
+      }
+      .placeholder p {
+        font-size: 13px;
+        margin: 0;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="placeholder">
+      <h1>🎙️ Roundtable</h1>
+      <p>
+        Phase 0: 拡張の骨格が読み込まれました。<br />
+        議論UIはPhase 1以降で実装します。
+      </p>
+    </div>
+  </body>
+</html>
