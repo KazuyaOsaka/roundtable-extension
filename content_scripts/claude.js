@@ -11,6 +11,21 @@
 //   - 経過は console + サイドパネルログの両方に流す
 // ============================================================
 
+// 二重ロードガード — 静的 content_script と background のプログラム注入が
+// 両方走った場合でも listener が二重登録されないようにする。
+if (window.__roundtableClaudeLoaded__) {
+  console.log(
+    "[Roundtable] claude.js は既にロード済み。再初期化をスキップ。",
+  );
+  // background 側からの ping/inject 後の状態通知用に「既にロード済み」を返せるよう、
+  // listener 自体は1回登録済みなので何もしない。
+} else {
+  window.__roundtableClaudeLoaded__ = true;
+  initClaudeContentScript();
+}
+
+function initClaudeContentScript() {
+
 console.log("[Roundtable] claude.js loaded on", window.location.href);
 
 const INPUT_SELECTORS = [
@@ -309,6 +324,10 @@ async function performSend(text) {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || !msg.type) return false;
+  if (msg.type === "ping") {
+    sendResponse({ ok: true, url: window.location.href });
+    return false;
+  }
   if (msg.type === "send_to_claude") {
     performSend(msg.text || "")
       .then(sendResponse)
@@ -321,3 +340,5 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   return false;
 });
+
+} // initClaudeContentScript end

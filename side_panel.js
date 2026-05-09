@@ -11,6 +11,7 @@ const $message = document.getElementById("message");
 const $send = document.getElementById("send");
 const $clear = document.getElementById("clear-log");
 const $domLogger = document.getElementById("dom-logger");
+const $ping = document.getElementById("ping");
 
 const LEVEL_PREFIX = {
   info: "•",
@@ -87,6 +88,23 @@ $send.addEventListener("click", async () => {
     logError(`通信エラー: ${e && e.message ? e.message : e}`);
   } finally {
     $send.disabled = false;
+  }
+});
+
+$ping.addEventListener("click", async () => {
+  $ping.disabled = true;
+  logInfo("ping 開始 → claude.ai content_script の到達性を確認");
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "ping_claude" });
+    if (response && response.ok) {
+      logOk(`ping 成功。claude.ai に content_script 到達 (url=${response.url})`);
+    } else {
+      logError(`ping 失敗: ${response && response.error ? response.error : "(原因不明)"}`);
+    }
+  } catch (e) {
+    logError(`ping 通信エラー: ${e && e.message ? e.message : e}`);
+  } finally {
+    $ping.disabled = false;
   }
 });
 

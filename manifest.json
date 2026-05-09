@@ -4,7 +4,8 @@
   "version": "0.0.1",
   "description": "Claude / ChatGPT / Gemini と人間1名でラウンドテーブル議論を行うChrome拡張",
   "permissions": [
-    "sidePanel"
+    "sidePanel",
+    "scripting"
   ],
   "host_permissions": [
     "https://claude.ai/*",
