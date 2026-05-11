@@ -2,10 +2,11 @@
 // ============================================================
 // 役割（Phase 1 Step 1A 時点）:
 //   - ツールバーアイコンクリックでサイドパネルを開く
-//   - サイドパネル → claude.ai タブの content_script の中継
-//   - 該当タブが無い場合のエラーをサイドパネルに返す
+//   - claude.ai タブの一覧をサイドパネルに返す（list_claude_tabs）
+//   - サイドパネル → 明示的に指定された claude.ai タブの content_script への中継
 //   - content_script が未注入のタブにはプログラム注入してから再送信する
-//     （SPA ナビゲーション後 / 拡張リロード後の既存タブ等を救済）
+//
+// 送信先タブの自動選択は廃止。送信元（サイドパネル）が tabId を必ず指定する。
 // ============================================================
 
 chrome.sidePanel
@@ -26,16 +27,48 @@ function logToPanel(level, message) {
     });
 }
 
-async function findClaudeTab() {
-  const tabs = await chrome.tabs.query({ url: ["https://claude.ai/*"] });
-  if (!tabs.length) return null;
-  const active = tabs.find((t) => t.active);
-  if (active) return active;
-  return tabs.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
-}
-
 const NO_RECEIVER_RE =
   /Receiving end does not exist|Could not establish connection/;
+
+async function listClaudeTabs() {
+  const tabs = await chrome.tabs.query({ url: ["https://claude.ai/*"] });
+  return tabs
+    .map((t) => ({
+      id: t.id,
+      url: t.url || "",
+      title: t.title || "",
+      active: !!t.active,
+      windowId: t.windowId,
+    }))
+    .sort((a, b) => {
+      // アクティブ優先、その後 id 昇順で安定ソート
+      if (a.active !== b.active) return a.active ? -1 : 1;
+      return a.id - b.id;
+    });
+}
+
+async function resolveTab(tabId) {
+  if (typeof tabId !== "number") {
+    return {
+      error:
+        "送信先タブが指定されていません。サイドパネル上部の「送信先タブ」ドロップダウンからタブを選んでください。",
+    };
+  }
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch (_e) {
+    return {
+      error: `tabId=${tabId} のタブが見つかりません（閉じられた可能性）。「再読込」を押してタブ一覧を更新してください。`,
+    };
+  }
+  if (!tab.url || !tab.url.startsWith("https://claude.ai/")) {
+    return {
+      error: `tabId=${tabId} は claude.ai のタブではありません (url=${tab.url || "?"})。`,
+    };
+  }
+  return { tab };
+}
 
 async function injectClaudeScript(tabId) {
   await chrome.scripting.executeScript({
@@ -53,7 +86,7 @@ async function sendToClaudeTab(tabId, msg) {
 
     logToPanel(
       "warn",
-      "content_script 未注入を検出。プログラム注入を試行...",
+      `tabId=${tabId} の content_script 未注入を検出。プログラム注入を試行...`,
     );
     try {
       await injectClaudeScript(tabId);
@@ -65,22 +98,20 @@ async function sendToClaudeTab(tabId, msg) {
       logToPanel("error", m);
       throw new Error(m);
     }
-    logToPanel("ok", "プログラム注入成功。再送信します。");
-    // listener が登録されるまで少し待つ
+    logToPanel("ok", `プログラム注入成功 (tabId=${tabId})。再送信します。`);
     await new Promise((r) => setTimeout(r, 250));
     return await chrome.tabs.sendMessage(tabId, msg);
   }
 }
 
-async function handleSendToClaude(text) {
-  const tab = await findClaudeTab();
-  if (!tab) {
-    const msg =
-      "claude.ai のタブが見つかりません。Chromeで claude.ai を開いてログイン後、再度送信してください。";
-    logToPanel("error", msg);
-    return { ok: false, error: msg };
+async function handleSendToClaude(text, tabId) {
+  const r = await resolveTab(tabId);
+  if (r.error) {
+    logToPanel("error", r.error);
+    return { ok: false, error: r.error };
   }
-  logToPanel("info", `claude.ai タブ検出 (tabId=${tab.id}, url=${tab.url})`);
+  const tab = r.tab;
+  logToPanel("info", `送信先 tabId=${tab.id} (${tab.url})`);
   try {
     const response = await sendToClaudeTab(tab.id, {
       type: "send_to_claude",
@@ -95,14 +126,14 @@ async function handleSendToClaude(text) {
   }
 }
 
-async function handlePingClaude() {
-  const tab = await findClaudeTab();
-  if (!tab) {
-    const msg = "claude.ai のタブが見つかりません。";
-    logToPanel("error", msg);
-    return { ok: false, error: msg };
+async function handlePingClaude(tabId) {
+  const r = await resolveTab(tabId);
+  if (r.error) {
+    logToPanel("error", r.error);
+    return { ok: false, error: r.error };
   }
-  logToPanel("info", `ping → tab ${tab.id} (${tab.url})`);
+  const tab = r.tab;
+  logToPanel("info", `ping → tabId=${tab.id} (${tab.url})`);
   try {
     const response = await sendToClaudeTab(tab.id, { type: "ping" });
     if (response && response.ok) {
@@ -120,13 +151,25 @@ async function handlePingClaude() {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return false;
 
+  if (msg.type === "list_claude_tabs") {
+    listClaudeTabs()
+      .then((tabs) => sendResponse({ ok: true, tabs }))
+      .catch((e) =>
+        sendResponse({
+          ok: false,
+          error: e && e.message ? e.message : String(e),
+        }),
+      );
+    return true;
+  }
+
   if (msg.type === "send_to_claude") {
-    handleSendToClaude(msg.text).then(sendResponse);
+    handleSendToClaude(msg.text, msg.tabId).then(sendResponse);
     return true;
   }
 
   if (msg.type === "ping_claude") {
-    handlePingClaude().then(sendResponse);
+    handlePingClaude(msg.tabId).then(sendResponse);
     return true;
   }
 
