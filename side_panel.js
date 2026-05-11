@@ -196,6 +196,23 @@ async function refreshTabs(options = {}) {
   }
 }
 
+function makeCopyButton(getText, label = "📋 コピー") {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = label;
+  btn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(getText());
+      const original = btn.textContent;
+      btn.textContent = "✓ コピーしました";
+      setTimeout(() => (btn.textContent = original), 1800);
+    } catch (_e) {
+      btn.textContent = "✗ コピー失敗";
+    }
+  });
+  return btn;
+}
+
 function appendJsonBlock({ title, json, storageKey }) {
   const wrap = document.createElement("div");
   wrap.className = "log-line info";
@@ -214,23 +231,42 @@ function appendJsonBlock({ title, json, storageKey }) {
   wrap.appendChild(pre);
 
   const actions = document.createElement("div");
-  actions.className = "log-block-actions";
-  const copyBtn = document.createElement("button");
-  copyBtn.type = "button";
-  copyBtn.textContent = "📋 JSON をコピー";
-  copyBtn.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(json, null, 2));
-      copyBtn.textContent = "✓ コピーしました";
-      setTimeout(() => (copyBtn.textContent = "📋 JSON をコピー"), 1800);
-    } catch (e) {
-      copyBtn.textContent = "✗ コピー失敗";
-    }
-  });
-  actions.appendChild(copyBtn);
+  actions.className = "block-actions";
+  actions.appendChild(
+    makeCopyButton(() => JSON.stringify(json, null, 2), "📋 JSON をコピー"),
+  );
   wrap.appendChild(actions);
 
   $log.appendChild(wrap);
+  $log.scrollTop = $log.scrollHeight;
+}
+
+function appendResponseBlock({ text, selector }) {
+  const frame = document.createElement("div");
+  frame.className = "response-frame";
+
+  const header = document.createElement("div");
+  header.className = "response-header";
+  const label = document.createElement("span");
+  label.textContent = `🟧 Claude 応答 (${formatTimestamp()}, ${text.length}字)`;
+  const meta = document.createElement("span");
+  meta.className = "response-meta";
+  meta.textContent = selector ? `selector=${selector}` : "";
+  header.appendChild(label);
+  header.appendChild(meta);
+  frame.appendChild(header);
+
+  const body = document.createElement("div");
+  body.className = "response-text";
+  body.textContent = text;
+  frame.appendChild(body);
+
+  const actions = document.createElement("div");
+  actions.className = "block-actions";
+  actions.appendChild(makeCopyButton(() => text, "📋 コピー"));
+  frame.appendChild(actions);
+
+  $log.appendChild(frame);
   $log.scrollTop = $log.scrollHeight;
 }
 
@@ -386,6 +422,17 @@ $send.addEventListener("click", async () => {
           `inject=${response.usedInjectMethod || "?"}, ` +
           `submit=${response.usedSubmitSelector || "?"})`,
       );
+      if (response.responseText) {
+        logOk(
+          `応答受信 (selector=${response.responseSelector}, ${response.responseText.length}字)`,
+        );
+        appendResponseBlock({
+          text: response.responseText,
+          selector: response.responseSelector,
+        });
+      } else if (response.responseError) {
+        logWarn(`応答取得エラー: ${response.responseError}`);
+      }
     } else {
       logError(
         `送信失敗: ${response && response.error ? response.error : "(原因不明)"}`,

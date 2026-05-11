@@ -210,6 +210,129 @@ async function clickSubmit(button) {
   button.dispatchEvent(new MouseEvent("click", baseOpts));
 }
 
+// ============================================================
+// 応答完了検知 + 応答テキスト抽出 (Step 1B 後半)
+//   - 停止ボタン: button[aria-label="応答を停止"]  （DOMロガー採取で確定）
+//   - 応答ブロック: data-testid="assistant-message" を第1候補に
+//     2 段のフォールバック付きで抽出
+// ============================================================
+
+const STOP_BUTTON_SELECTOR = 'button[aria-label="応答を停止"]';
+
+function findStopButton() {
+  return document.querySelector(STOP_BUTTON_SELECTOR);
+}
+
+async function waitForResponseComplete(timeoutMs = 120000) {
+  // 1) 停止ボタン出現を待つ（送信→応答開始）
+  const appearStart = Date.now();
+  while (!findStopButton()) {
+    if (Date.now() - appearStart > 10000) {
+      return {
+        ok: false,
+        error:
+          "停止ボタンが10秒以内に出現しませんでした。応答開始失敗の可能性。",
+      };
+    }
+    await sleep(150);
+  }
+  logPanel("info", "停止ボタン出現 → 応答中");
+
+  // 2) 停止ボタン消滅を待つ（応答完了）
+  const startWait = Date.now();
+  let lastHeartbeat = startWait;
+  while (findStopButton()) {
+    const elapsed = Date.now() - startWait;
+    if (elapsed > timeoutMs) {
+      return {
+        ok: false,
+        error: `応答完了タイムアウト (${timeoutMs}ms 経過)`,
+      };
+    }
+    // 10秒ごとに進捗ログ
+    if (Date.now() - lastHeartbeat >= 10000) {
+      lastHeartbeat = Date.now();
+      logPanel("info", `応答中... ${Math.round(elapsed / 1000)}秒経過`);
+    }
+    await sleep(300);
+  }
+
+  // 3) 消滅の安定化（瞬間的な再出現の保険）
+  await sleep(500);
+  if (findStopButton()) {
+    const remaining = timeoutMs - (Date.now() - startWait);
+    if (remaining <= 0) {
+      return {
+        ok: false,
+        error: `応答完了タイムアウト（再出現後の残時間なし）`,
+      };
+    }
+    logPanel("warn", "停止ボタンが再出現。応答継続として待機を再開。");
+    return await waitForResponseComplete(remaining);
+  }
+  logPanel("ok", "停止ボタン消滅 → 応答完了");
+  return { ok: true };
+}
+
+function extractLatestAssistantMessage() {
+  // 候補1: data-testid="assistant-message"
+  const byTestid = document.querySelectorAll(
+    '[data-testid="assistant-message"]',
+  );
+  if (byTestid.length > 0) {
+    const last = byTestid[byTestid.length - 1];
+    const text = (last.innerText || "").trim();
+    if (text) {
+      return {
+        text,
+        selector: '[data-testid="assistant-message"]',
+      };
+    }
+  }
+
+  // 候補2: data-message-author-role="assistant"
+  const byAuthor = document.querySelectorAll(
+    '[data-message-author-role="assistant"]',
+  );
+  if (byAuthor.length > 0) {
+    const last = byAuthor[byAuthor.length - 1];
+    const text = (last.innerText || "").trim();
+    if (text) {
+      return {
+        text,
+        selector: '[data-message-author-role="assistant"]',
+      };
+    }
+  }
+
+  // 候補3: user-message の次にある assistant らしき要素を兄弟方向に辿る
+  const users = document.querySelectorAll('[data-testid="user-message"]');
+  if (users.length > 0) {
+    const lastUser = users[users.length - 1];
+    const userContainer = lastUser.closest("div");
+    const startNode = userContainer
+      ? userContainer.parentElement &&
+        userContainer.parentElement.nextElementSibling
+      : null;
+    let node = startNode;
+    while (node) {
+      const containsUserMessage = node.querySelector(
+        '[data-testid="user-message"]',
+      );
+      const text = (node.innerText || "").trim();
+      if (text && !containsUserMessage) {
+        return {
+          text,
+          selector: "fallback:after-last-user-message",
+        };
+      }
+      node = node.nextElementSibling;
+    }
+  }
+
+  return { text: null, selector: null };
+}
+
 async function performSend(text) {
   if (!text || !text.trim()) {
     return { ok: false, error: "本文が空です。" };
@@ -314,11 +437,38 @@ async function performSend(text) {
     };
   }
 
-  return {
+  const baseResult = {
     ok: true,
     usedInputSelector: inputResult.selector,
     usedInjectMethod,
     usedSubmitSelector: submitResult.selector,
+  };
+
+  // 7. 応答完了待機
+  logPanel("info", "応答完了を待機中...");
+  const waitResult = await waitForResponseComplete();
+  if (!waitResult.ok) {
+    logPanel("warn", waitResult.error);
+    return { ...baseResult, responseError: waitResult.error };
+  }
+
+  // 8. 応答テキスト抽出
+  const extracted = extractLatestAssistantMessage();
+  if (!extracted.text) {
+    const m =
+      "応答テキストの抽出に失敗。セレクタ候補（assistant-message / data-message-author-role / fallback）全滅。";
+    logPanel("warn", m);
+    return { ...baseResult, responseError: m };
+  }
+  logPanel(
+    "ok",
+    `応答抽出成功 (selector=${extracted.selector}, ${extracted.text.length}字)`,
+  );
+
+  return {
+    ...baseResult,
+    responseText: extracted.text,
+    responseSelector: extracted.selector,
   };
 }
 
