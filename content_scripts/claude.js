@@ -322,6 +322,199 @@ async function performSend(text) {
   };
 }
 
+// ============================================================
+// DOM Logger (Step 1B 前半)
+//   - MutationObserver で document.body subtree を 60 秒監視
+//   - button / [role=button] と応答ブロック候補の added / removed を記録
+//   - 結果は chrome.storage.local に dom_log_<timestamp> として保存
+//   - 同時に runtime メッセージで「サイドパネル」にも送る
+//   - サイドパネルが閉じていても採取は継続（content_script 内で完結）
+// ============================================================
+
+const DOM_LOG_DURATION_MS = 60000;
+const DOM_LOG_MAX_EVENTS = 2000;
+const DOM_LOG_COUNTDOWN_STEP_MS = 10000;
+const DOM_LOG_TEXT_LIMIT = 40;
+
+const DOM_LOG_CANDIDATE_SELECTOR = [
+  "button",
+  "[role='button']",
+  "article",
+  "[data-testid*='message']",
+  "[data-message-author-role]",
+  "div[class*='message']",
+  "div[class*='Message']",
+].join(",");
+
+function classifyDomNode(node) {
+  if (!(node instanceof Element)) return null;
+  const tag = node.tagName.toLowerCase();
+  if (tag === "button" || node.getAttribute("role") === "button") {
+    return "button";
+  }
+  if (tag === "article") return "response:article";
+  const dataTestid = node.getAttribute("data-testid");
+  if (dataTestid && /message/i.test(dataTestid))
+    return "response:data-testid-message";
+  if (node.hasAttribute("data-message-author-role"))
+    return "response:data-message-author-role";
+  if (tag === "div") {
+    const cls = node.getAttribute("class") || "";
+    if (/message/i.test(cls)) return "response:class-message";
+  }
+  return null;
+}
+
+function snapshotDomNode(node, category, type, startTime) {
+  const parent = node.parentElement;
+  const text = (node.textContent || "").replace(/\s+/g, " ").trim();
+  return {
+    t_ms: Math.round(performance.now() - startTime),
+    type, // "added" | "removed"
+    category,
+    tag: node.tagName.toLowerCase(),
+    id: node.id || null,
+    aria_label: node.getAttribute("aria-label") || null,
+    data_testid: node.getAttribute("data-testid") || null,
+    button_type: node.getAttribute("type") || null,
+    role: node.getAttribute("role") || null,
+    author_role: node.getAttribute("data-message-author-role") || null,
+    class: (node.getAttribute("class") || "").slice(0, 120),
+    text: text.slice(0, DOM_LOG_TEXT_LIMIT),
+    text_truncated: text.length > DOM_LOG_TEXT_LIMIT,
+    parent_tag: parent ? parent.tagName.toLowerCase() : null,
+    parent_class: parent
+      ? (parent.getAttribute("class") || "").slice(0, DOM_LOG_TEXT_LIMIT)
+      : null,
+  };
+}
+
+const domLogger = {
+  running: false,
+  startTime: 0,
+  events: [],
+  truncated: false,
+  observer: null,
+  countdownTimer: null,
+  endTimer: null,
+
+  _recordOne(node, type) {
+    const cat = classifyDomNode(node);
+    if (!cat) return;
+    if (this.events.length >= DOM_LOG_MAX_EVENTS) {
+      if (!this.truncated) {
+        this.truncated = true;
+        logPanel(
+          "warn",
+          `DOMロガー: イベント上限 ${DOM_LOG_MAX_EVENTS} 件に到達。以降は記録を打ち切ります。`,
+        );
+      }
+      return;
+    }
+    this.events.push(snapshotDomNode(node, cat, type, this.startTime));
+  },
+
+  _recordSubtree(node, type) {
+    if (!(node instanceof Element)) return;
+    this._recordOne(node, type);
+    if (typeof node.querySelectorAll !== "function") return;
+    const matches = node.querySelectorAll(DOM_LOG_CANDIDATE_SELECTOR);
+    for (const el of matches) this._recordOne(el, type);
+  },
+
+  start() {
+    if (this.running) {
+      return { ok: false, error: "DOMロガーは既に実行中です。" };
+    }
+    this.running = true;
+    this.startTime = performance.now();
+    this.events = [];
+    this.truncated = false;
+
+    this.observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const n of m.addedNodes) this._recordSubtree(n, "added");
+        for (const n of m.removedNodes) this._recordSubtree(n, "removed");
+      }
+    });
+    this.observer.observe(document.body, { childList: true, subtree: true });
+
+    logPanel(
+      "ok",
+      `DOMロガー開始 (${DOM_LOG_DURATION_MS / 1000} 秒)。claude.ai タブで送信→応答を1往復してください。`,
+    );
+
+    let remaining = Math.floor(DOM_LOG_DURATION_MS / 1000);
+    this.countdownTimer = setInterval(() => {
+      remaining -= DOM_LOG_COUNTDOWN_STEP_MS / 1000;
+      if (remaining > 0) {
+        logPanel(
+          "info",
+          `DOMロガー実行中... 残り ${remaining} 秒（採取 ${this.events.length} 件）`,
+        );
+      }
+    }, DOM_LOG_COUNTDOWN_STEP_MS);
+
+    this.endTimer = setTimeout(() => {
+      this.stop().catch((e) =>
+        logPanel("error", `DOMロガー停止時エラー: ${e && e.message ? e.message : e}`),
+      );
+    }, DOM_LOG_DURATION_MS);
+
+    return { ok: true, durationMs: DOM_LOG_DURATION_MS };
+  },
+
+  async stop() {
+    if (!this.running) return null;
+    this.running = false;
+    if (this.observer) {
+      this.observer.disconnect();
+      this.observer = null;
+    }
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null;
+    }
+    if (this.endTimer) {
+      clearTimeout(this.endTimer);
+      this.endTimer = null;
+    }
+
+    const result = {
+      captured_at: new Date().toISOString(),
+      url: window.location.href,
+      duration_ms: DOM_LOG_DURATION_MS,
+      event_count: this.events.length,
+      truncated: this.truncated,
+      events: this.events,
+    };
+    const key = `dom_log_${Date.now()}`;
+    try {
+      await chrome.storage.local.set({ [key]: result });
+      logPanel(
+        "ok",
+        `DOMロガー終了。chrome.storage.local["${key}"] に保存（${result.event_count} 件、truncated=${result.truncated}）`,
+      );
+    } catch (e) {
+      logPanel(
+        "error",
+        `DOMロガー結果の storage 保存に失敗: ${e && e.message ? e.message : e}`,
+      );
+    }
+
+    chrome.runtime
+      .sendMessage({
+        type: "dom_log_result",
+        storage_key: key,
+        result,
+      })
+      .catch(() => {});
+
+    this.events = [];
+    return { storage_key: key, result };
+  },
+};
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || !msg.type) return false;
   if (msg.type === "ping") {
@@ -337,6 +530,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: false, error: m });
       });
     return true; // async
+  }
+  if (msg.type === "start_dom_logger") {
+    const r = domLogger.start();
+    sendResponse(r);
+    return false;
+  }
+  if (msg.type === "dom_logger_status") {
+    sendResponse({
+      ok: true,
+      running: domLogger.running,
+      event_count: domLogger.events.length,
+    });
+    return false;
   }
   return false;
 });

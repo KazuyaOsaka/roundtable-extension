@@ -145,6 +145,36 @@
         justify-content: space-between;
         gap: 8px;
         align-items: center;
+        flex-wrap: wrap;
+      }
+      .logger-row {
+        justify-content: flex-start;
+      }
+      .logger-row button {
+        font-size: 11.5px;
+        padding: 5px 10px;
+      }
+      .log-block {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 6px 8px;
+        margin: 4px 0 0 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10.5px;
+        line-height: 1.5;
+        white-space: pre;
+        overflow: auto;
+        max-height: 380px;
+      }
+      .log-block-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 4px;
+      }
+      .log-block-actions button {
+        font-size: 10.5px;
+        padding: 3px 8px;
       }
       button {
         padding: 7px 14px;
@@ -214,12 +244,25 @@
           placeholder="claude.ai に送るメッセージ（例: こんにちは）"
           spellcheck="false"
         ></textarea>
+        <div class="button-row logger-row">
+          <button
+            id="dom-logger"
+            type="button"
+            title="60秒間 MutationObserver で claude.ai の DOM 変化を採取"
+          >
+            📋 DOMロガー (60秒)
+          </button>
+          <button
+            id="show-latest-log"
+            type="button"
+            title="chrome.storage.local に保存済みの最新 DOM ログを表示"
+          >
+            📂 最新ログ取得
+          </button>
+        </div>
         <div class="button-row">
           <button id="ping" type="button" title="claude.ai タブに content_script が注入されているか確認">
             診断: ping
-          </button>
-          <button id="dom-logger" type="button" disabled title="Step 1B で実装">
-            DOMロガー起動 (1B 予定)
           </button>
           <button id="send" class="primary" type="button">送信</button>
         </div>

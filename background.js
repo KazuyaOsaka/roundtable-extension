@@ -183,6 +183,65 @@ async function handlePingClaude(tabId) {
   }
 }
 
+async function handleStartDomLogger(tabId) {
+  const r = await resolveTab(tabId);
+  if (r.error) {
+    logToPanel("error", r.error);
+    return { ok: false, error: r.error };
+  }
+  const tab = r.tab;
+  logToPanel("info", `DOMロガー開始要求 → tabId=${tab.id} (${tab.url})`);
+  try {
+    const response = await sendToClaudeTab(tab.id, {
+      type: "start_dom_logger",
+    });
+    return response || { ok: false, error: "content_script からの応答なし" };
+  } catch (e) {
+    const errMsg = e && e.message ? e.message : String(e);
+    logToPanel("error", `DOMロガー開始失敗: ${errMsg}`);
+    return { ok: false, error: errMsg };
+  }
+}
+
+async function handleGetLatestDomLog() {
+  try {
+    const all = await chrome.storage.local.get(null);
+    const keys = Object.keys(all)
+      .filter((k) => k.startsWith("dom_log_"))
+      .sort();
+    if (keys.length === 0) {
+      return { ok: false, error: "保存されたDOMログがありません。" };
+    }
+    const latestKey = keys[keys.length - 1];
+    return {
+      ok: true,
+      storage_key: latestKey,
+      result: all[latestKey],
+      total_logs: keys.length,
+    };
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : String(e) };
+  }
+}
+
+async function handleListDomLogs() {
+  try {
+    const all = await chrome.storage.local.get(null);
+    const entries = Object.keys(all)
+      .filter((k) => k.startsWith("dom_log_"))
+      .sort()
+      .map((k) => ({
+        key: k,
+        captured_at: all[k] && all[k].captured_at,
+        event_count: all[k] && all[k].event_count,
+        url: all[k] && all[k].url,
+      }));
+    return { ok: true, logs: entries };
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : String(e) };
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return false;
 
@@ -208,9 +267,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "start_dom_logger") {
+    handleStartDomLogger(msg.tabId).then(sendResponse);
+    return true;
+  }
+
+  if (msg.type === "get_latest_dom_log") {
+    handleGetLatestDomLog().then(sendResponse);
+    return true;
+  }
+
+  if (msg.type === "list_dom_logs") {
+    handleListDomLogs().then(sendResponse);
+    return true;
+  }
+
   if (msg.type === "log" && sender && sender.tab) {
     const lvl = msg.level || "info";
     console.log(`[Roundtable][content][${lvl}]`, msg.message);
+    return false;
+  }
+
+  if (msg.type === "dom_log_result" && sender && sender.tab) {
+    // content_script からの完了通知は side panel に直接届くので、background はログのみ
+    console.log(
+      `[Roundtable][content] DOM log result saved at ${msg.storage_key}`,
+    );
     return false;
   }
 

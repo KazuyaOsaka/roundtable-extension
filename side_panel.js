@@ -12,6 +12,7 @@ const $message = document.getElementById("message");
 const $send = document.getElementById("send");
 const $clear = document.getElementById("clear-log");
 const $domLogger = document.getElementById("dom-logger");
+const $showLatestLog = document.getElementById("show-latest-log");
 const $ping = document.getElementById("ping");
 const $tabSelect = document.getElementById("tab-select");
 const $reloadTabs = document.getElementById("reload-tabs");
@@ -195,13 +196,65 @@ async function refreshTabs(options = {}) {
   }
 }
 
+function appendJsonBlock({ title, json, storageKey }) {
+  const wrap = document.createElement("div");
+  wrap.className = "log-line info";
+  const ts = document.createElement("span");
+  ts.className = "ts";
+  ts.textContent = `[${formatTimestamp()}]`;
+  wrap.appendChild(ts);
+  const titleText = storageKey
+    ? `• ${title} — storage_key=${storageKey}`
+    : `• ${title}`;
+  wrap.appendChild(document.createTextNode(titleText));
+
+  const pre = document.createElement("div");
+  pre.className = "log-block";
+  pre.textContent = JSON.stringify(json, null, 2);
+  wrap.appendChild(pre);
+
+  const actions = document.createElement("div");
+  actions.className = "log-block-actions";
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.textContent = "📋 JSON をコピー";
+  copyBtn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(json, null, 2));
+      copyBtn.textContent = "✓ コピーしました";
+      setTimeout(() => (copyBtn.textContent = "📋 JSON をコピー"), 1800);
+    } catch (e) {
+      copyBtn.textContent = "✗ コピー失敗";
+    }
+  });
+  actions.appendChild(copyBtn);
+  wrap.appendChild(actions);
+
+  $log.appendChild(wrap);
+  $log.scrollTop = $log.scrollHeight;
+}
+
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg && msg.type === "log") {
+  if (!msg) return;
+  if (msg.type === "log") {
     appendLog({
       level: msg.level || "info",
       message: msg.message || "",
       timestamp: msg.timestamp || null,
     });
+    return;
+  }
+  if (msg.type === "dom_log_result") {
+    logOk(
+      `DOMログ受信。events=${msg.result && msg.result.event_count}, truncated=${msg.result && msg.result.truncated}`,
+    );
+    appendJsonBlock({
+      title: "DOMロガー結果",
+      json: msg.result,
+      storageKey: msg.storage_key,
+    });
+    $domLogger.disabled = false;
+    return;
   }
 });
 
@@ -217,6 +270,66 @@ $reloadTabs.addEventListener("click", () => {
 $useCurrentTab.addEventListener("click", async () => {
   logInfo("現在のウィンドウのアクティブタブを送信先に設定します...");
   await refreshTabs({ selectCurrentActive: true });
+});
+
+$domLogger.addEventListener("click", async () => {
+  const tabId = getSelectedTabId();
+  if (tabId == null) {
+    logWarn("送信先タブが選ばれていません。「送信先タブ」ドロップダウンから選んでください。");
+    return;
+  }
+  $domLogger.disabled = true;
+  logInfo(
+    `DOMロガー開始要求 (tabId=${tabId})。60秒間 MutationObserver で採取します...`,
+  );
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "start_dom_logger",
+      tabId,
+    });
+    if (response && response.ok) {
+      logOk(
+        `DOMロガー開始成功。claude.ai タブに切替えて、送信→応答を1往復してください。結果は60秒後に表示されます。`,
+      );
+      // ボタンは dom_log_result 受信時に再度有効化される
+    } else {
+      logError(
+        `DOMロガー開始失敗: ${response && response.error ? response.error : "(原因不明)"}`,
+      );
+      $domLogger.disabled = false;
+    }
+  } catch (e) {
+    logError(`DOMロガー通信エラー: ${e && e.message ? e.message : e}`);
+    $domLogger.disabled = false;
+  }
+});
+
+$showLatestLog.addEventListener("click", async () => {
+  $showLatestLog.disabled = true;
+  logInfo("chrome.storage.local から最新DOMログを取得...");
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "get_latest_dom_log",
+    });
+    if (response && response.ok) {
+      logOk(
+        `最新DOMログ取得成功 (storage_key=${response.storage_key}, 全 ${response.total_logs} 件中の最新)`,
+      );
+      appendJsonBlock({
+        title: "DOMロガー結果 (storage から取得)",
+        json: response.result,
+        storageKey: response.storage_key,
+      });
+    } else {
+      logWarn(
+        `最新ログ取得失敗: ${response && response.error ? response.error : "(原因不明)"}`,
+      );
+    }
+  } catch (e) {
+    logError(`通信エラー: ${e && e.message ? e.message : e}`);
+  } finally {
+    $showLatestLog.disabled = false;
+  }
 });
 
 $ping.addEventListener("click", async () => {
