@@ -13,6 +13,7 @@ const $send = document.getElementById("send");
 const $clear = document.getElementById("clear-log");
 const $domLogger = document.getElementById("dom-logger");
 const $showLatestLog = document.getElementById("show-latest-log");
+const $showLatestSnapshot = document.getElementById("show-latest-snapshot");
 const $ping = document.getElementById("ping");
 const $tabSelect = document.getElementById("tab-select");
 const $reloadTabs = document.getElementById("reload-tabs");
@@ -368,6 +369,34 @@ $showLatestLog.addEventListener("click", async () => {
   }
 });
 
+$showLatestSnapshot.addEventListener("click", async () => {
+  $showLatestSnapshot.disabled = true;
+  logInfo("chrome.storage.local から最新 assistant スナップショットを取得...");
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "get_latest_assistant_snapshot",
+    });
+    if (response && response.ok) {
+      logOk(
+        `最新スナップショット取得成功 (storage_key=${response.storage_key}, 全 ${response.total_snapshots} 件中の最新、候補 ${response.snapshot && response.snapshot.candidate_count} 件)`,
+      );
+      appendJsonBlock({
+        title: "Assistant スナップショット (storage から取得)",
+        json: response.snapshot,
+        storageKey: response.storage_key,
+      });
+    } else {
+      logWarn(
+        `スナップショット取得失敗: ${response && response.error ? response.error : "(原因不明)"}`,
+      );
+    }
+  } catch (e) {
+    logError(`通信エラー: ${e && e.message ? e.message : e}`);
+  } finally {
+    $showLatestSnapshot.disabled = false;
+  }
+});
+
 $ping.addEventListener("click", async () => {
   const tabId = getSelectedTabId();
   if (tabId == null) {
@@ -432,6 +461,16 @@ $send.addEventListener("click", async () => {
         });
       } else if (response.responseError) {
         logWarn(`応答取得エラー: ${response.responseError}`);
+        if (response.assistantSnapshot) {
+          logInfo(
+            `Assistant スナップショット採取済み（候補 ${response.assistantSnapshot.candidate_count} 件、storage_key=${response.assistantSnapshotKey || "?"}）。JSON をチャット側 Claude に貼ってセレクタ確定してください。`,
+          );
+          appendJsonBlock({
+            title: "Assistant スナップショット",
+            json: response.assistantSnapshot,
+            storageKey: response.assistantSnapshotKey,
+          });
+        }
       }
     } else {
       logError(

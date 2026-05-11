@@ -242,6 +242,30 @@ async function handleListDomLogs() {
   }
 }
 
+async function handleGetLatestAssistantSnapshot() {
+  try {
+    const all = await chrome.storage.local.get(null);
+    const keys = Object.keys(all)
+      .filter((k) => k.startsWith("assistant_snapshot_"))
+      .sort();
+    if (keys.length === 0) {
+      return {
+        ok: false,
+        error: "保存された assistant スナップショットがありません。",
+      };
+    }
+    const latestKey = keys[keys.length - 1];
+    return {
+      ok: true,
+      storage_key: latestKey,
+      snapshot: all[latestKey],
+      total_snapshots: keys.length,
+    };
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : String(e) };
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return false;
 
@@ -279,6 +303,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "list_dom_logs") {
     handleListDomLogs().then(sendResponse);
+    return true;
+  }
+
+  if (msg.type === "get_latest_assistant_snapshot") {
+    handleGetLatestAssistantSnapshot().then(sendResponse);
     return true;
   }
 

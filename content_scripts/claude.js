@@ -333,6 +333,130 @@ function extractLatestAssistantMessage() {
   return { text: null, selector: null };
 }
 
+// ============================================================
+// 応答候補スナップショット (Step 1B fix#2)
+//   - MutationObserver では Claude 応答コンテナの mount を捕捉できなかったため、
+//     応答完了後に querySelectorAll で網羅的にダンプする方式に切替
+//   - 4 戦略 (A〜D) の候補を返す。Kazuya とチャット側で本物のセレクタを確定する
+// ============================================================
+
+function dumpAttrs(el) {
+  const out = {};
+  for (const attr of el.attributes) {
+    if (
+      attr.name.startsWith("data-") ||
+      attr.name === "id" ||
+      attr.name === "role" ||
+      attr.name === "aria-label"
+    ) {
+      out[attr.name] = (attr.value || "").slice(0, 80);
+    }
+  }
+  return out;
+}
+
+function describeCandidate(el, extra = {}) {
+  const text = (el.innerText || "").trim();
+  return {
+    tag: el.tagName.toLowerCase(),
+    classes: ((el.className && el.className.toString()) || "").slice(0, 120),
+    attrs: dumpAttrs(el),
+    text_head: text.slice(0, 60),
+    text_length: text.length,
+    ...extra,
+  };
+}
+
+const RETRY_ARIA_LABELS = ["Retry", "再試行", "再生成", "Regenerate"];
+const RETRY_SELECTOR = RETRY_ARIA_LABELS.map(
+  (l) => `button[aria-label="${l}"]`,
+).join(", ");
+
+const TESTID_PATTERNS_FOR_SNAPSHOT = [
+  "assistant-message",
+  "message-content",
+  "chat-message",
+  "response-message",
+  "ai-message",
+];
+
+function snapshotAssistantCandidates() {
+  const candidates = [];
+
+  // 戦略A: 既知の data-testid パターン
+  for (const pat of TESTID_PATTERNS_FOR_SNAPSHOT) {
+    document.querySelectorAll(`[data-testid="${pat}"]`).forEach((el, idx) => {
+      candidates.push({
+        strategy: `testid:${pat}`,
+        index: idx,
+        ...describeCandidate(el),
+      });
+    });
+  }
+
+  // 戦略B: data-message-author-role 属性を持つ要素
+  document.querySelectorAll("[data-message-author-role]").forEach((el, idx) => {
+    candidates.push({
+      strategy: "author-role-attr",
+      index: idx,
+      author_role: el.getAttribute("data-message-author-role"),
+      ...describeCandidate(el),
+    });
+  });
+
+  // 戦略C: user-message から親階層を遡って同階層の div 兄弟を見る
+  const userMsgs = document.querySelectorAll('[data-testid="user-message"]');
+  if (userMsgs.length > 0) {
+    const lastUser = userMsgs[userMsgs.length - 1];
+    let cursor = lastUser;
+    for (let depth = 0; depth < 6 && cursor; depth++) {
+      cursor = cursor.parentElement;
+      if (!cursor) break;
+      Array.from(cursor.children).forEach((sib, sidx) => {
+        if (sib.tagName !== "DIV") return;
+        if (sib.querySelector('[data-testid="user-message"]')) return;
+        const text = (sib.innerText || "").trim();
+        if (text.length < 5) return;
+        candidates.push({
+          strategy: `sibling-at-depth-${depth}`,
+          index: sidx,
+          ...describeCandidate(sib),
+        });
+      });
+    }
+  }
+
+  // 戦略D: Retry / 再試行 / 再生成 ボタンの祖先をたどる
+  // Retry はユーザー発言にはなく Claude 応答に付くので、応答コンテナを特定しやすい
+  document.querySelectorAll(RETRY_SELECTOR).forEach((btn, idx) => {
+    let cur = btn.parentElement;
+    for (let d = 0; d < 10 && cur; d++) {
+      const text = (cur.innerText || "").trim();
+      if (text.length >= 10) {
+        candidates.push({
+          strategy: `retry-ancestor-depth-${d}`,
+          index: idx,
+          retry_aria_label: btn.getAttribute("aria-label"),
+          ...describeCandidate(cur),
+        });
+        break;
+      }
+      cur = cur.parentElement;
+    }
+  });
+
+  return {
+    captured_at: new Date().toISOString(),
+    url: location.href,
+    user_message_count: document.querySelectorAll(
+      '[data-testid="user-message"]',
+    ).length,
+    retry_button_count: document.querySelectorAll(RETRY_SELECTOR).length,
+    candidate_count: candidates.length,
+    candidates,
+  };
+}
+
 async function performSend(text) {
   if (!text || !text.trim()) {
     return { ok: false, error: "本文が空です。" };
@@ -452,23 +576,46 @@ async function performSend(text) {
     return { ...baseResult, responseError: waitResult.error };
   }
 
+  // 7.5 安定化のために少し待ってからスナップショット採取
+  // (応答完了直後は DOM が再レンダ中のことがあるため)
+  await sleep(300);
+  const snapshot = snapshotAssistantCandidates();
+
   // 8. 応答テキスト抽出
   const extracted = extractLatestAssistantMessage();
   if (!extracted.text) {
     const m =
-      "応答テキストの抽出に失敗。セレクタ候補（assistant-message / data-message-author-role / fallback）全滅。";
+      "応答テキストの抽出に失敗。セレクタ候補（assistant-message / data-message-author-role / fallback）全滅。スナップショットを採取して返します。";
     logPanel("warn", m);
-    return { ...baseResult, responseError: m };
+
+    const snapshotKey = `assistant_snapshot_${Date.now()}`;
+    try {
+      await chrome.storage.local.set({ [snapshotKey]: snapshot });
+      logPanel("info", `スナップショット保存: ${snapshotKey}（候補 ${snapshot.candidate_count} 件）`);
+    } catch (e) {
+      logPanel(
+        "warn",
+        `スナップショットの storage 保存に失敗: ${e && e.message ? e.message : e}`,
+      );
+    }
+
+    return {
+      ...baseResult,
+      responseError: "応答テキスト抽出失敗",
+      assistantSnapshot: snapshot,
+      assistantSnapshotKey: snapshotKey,
+    };
   }
   logPanel(
     "ok",
-    `応答抽出成功 (selector=${extracted.selector}, ${extracted.text.length}字)`,
+    `応答抽出成功 (selector=${extracted.selector}, ${extracted.text.length}字、スナップショット候補 ${snapshot.candidate_count} 件）`,
   );
 
   return {
     ...baseResult,
     responseText: extracted.text,
     responseSelector: extracted.selector,
+    snapshotCandidateCount: snapshot.candidate_count,
   };
 }
 
