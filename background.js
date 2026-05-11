@@ -30,21 +30,56 @@ function logToPanel(level, message) {
 const NO_RECEIVER_RE =
   /Receiving end does not exist|Could not establish connection/;
 
+async function getCurrentActiveTab() {
+  try {
+    const tabs = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+    return tabs[0] || null;
+  } catch (_e) {
+    return null;
+  }
+}
+
 async function listClaudeTabs() {
-  const tabs = await chrome.tabs.query({ url: ["https://claude.ai/*"] });
-  return tabs
+  const [claudeTabs, currentTab] = await Promise.all([
+    chrome.tabs.query({ url: ["https://claude.ai/*"] }),
+    getCurrentActiveTab(),
+  ]);
+  const currentTabId = currentTab ? currentTab.id : null;
+  const currentTabIsClaude = !!(
+    currentTab &&
+    currentTab.url &&
+    currentTab.url.startsWith("https://claude.ai/")
+  );
+
+  const tabs = claudeTabs
     .map((t) => ({
       id: t.id,
       url: t.url || "",
       title: t.title || "",
       active: !!t.active,
       windowId: t.windowId,
+      isCurrentWindowActive: t.id === currentTabId,
     }))
     .sort((a, b) => {
-      // アクティブ優先、その後 id 昇順で安定ソート
+      // 1) 現在のウィンドウのアクティブタブ優先
+      if (a.isCurrentWindowActive !== b.isCurrentWindowActive) {
+        return a.isCurrentWindowActive ? -1 : 1;
+      }
+      // 2) その他ウィンドウのアクティブを次に
       if (a.active !== b.active) return a.active ? -1 : 1;
+      // 3) id 昇順で安定化
       return a.id - b.id;
     });
+
+  return {
+    tabs,
+    currentTabId: currentTabIsClaude ? currentTabId : null,
+    currentTabIsClaude,
+    currentTabUrl: currentTab ? currentTab.url || null : null,
+  };
 }
 
 async function resolveTab(tabId) {
@@ -153,7 +188,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "list_claude_tabs") {
     listClaudeTabs()
-      .then((tabs) => sendResponse({ ok: true, tabs }))
+      .then((result) => sendResponse({ ok: true, ...result }))
       .catch((e) =>
         sendResponse({
           ok: false,
