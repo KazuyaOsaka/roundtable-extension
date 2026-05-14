@@ -28,6 +28,19 @@ function initClaudeContentScript() {
 
 console.log("[Roundtable] claude.js loaded on", window.location.href);
 
+// ============================================================
+// セレクタ優先順位の原則 (Phase 2 A2)
+// ------------------------------------------------------------
+// 各セレクタチェーンは以下の優先順位で並べる:
+//   1. aria-label    — i18n に強く、UI 改修でも残りやすい
+//   2. data-testid / data-* — 開発者が意図的に付与、最も安定
+//   3. role 属性     — ARIA 標準で意味論的に安定
+//   4. tag + 必須属性 — contenteditable など仕様レベルの属性
+//   5. class 名     — 最後の手段。リファクタで頻繁に変わる
+// claude.ai では現状 data-testid が少ないため、aria-label と role を
+// 第一線に置く。class ベースの判定は最終フォールバックに限定する。
+// ============================================================
+
 const INPUT_SELECTORS = [
   '[data-testid="chat-input"]',
   'div[contenteditable="true"][role="textbox"]',
@@ -217,16 +230,29 @@ async function clickSubmit(button) {
 //     2 段のフォールバック付きで抽出
 // ============================================================
 
-const STOP_BUTTON_SELECTOR = 'button[aria-label="応答を停止"]';
+// Phase 2 A2: 停止ボタンの aria-label を配列化。
+// 日本語版 ('応答を停止') は Phase 1 で実機確認済み。英語版の正確な値は
+// 未確定のため候補を複数並べる。Phase 3 で英語 UI を DOM ロガーで採取して確定。
+const STOP_BUTTON_SELECTORS = [
+  'button[aria-label="応答を停止"]',
+  'button[aria-label="Stop response"]',
+  'button[aria-label="Stop"]',
+  'button[aria-label="停止"]',
+];
 
 function findStopButton() {
-  return document.querySelector(STOP_BUTTON_SELECTOR);
+  for (const sel of STOP_BUTTON_SELECTORS) {
+    const el = document.querySelector(sel);
+    if (el) return { element: el, selector: sel };
+  }
+  return null;
 }
 
 async function waitForResponseComplete(timeoutMs = 120000) {
   // 1) 停止ボタン出現を待つ（送信→応答開始）
   const appearStart = Date.now();
-  while (!findStopButton()) {
+  let firstHit = null;
+  while (!(firstHit = findStopButton())) {
     if (Date.now() - appearStart > 10000) {
       return {
         ok: false,
@@ -236,7 +262,7 @@ async function waitForResponseComplete(timeoutMs = 120000) {
     }
     await sleep(150);
   }
-  logPanel("info", "停止ボタン出現 → 応答中");
+  logPanel("info", `停止ボタン出現 → 応答中 (selector=${firstHit.selector})`);
 
   // 2) 停止ボタン消滅を待つ（応答完了）
   const startWait = Date.now();
@@ -393,6 +419,29 @@ function cleanAssistantText(raw) {
 const ASSISTANT_RETRY_LABELS = ["Retry", "再試行", "Regenerate", "再生成"];
 
 function extractLatestAssistantMessage() {
+  // Phase 2 C3: 抽出メタデータを構造化して返す。
+  // 呼出側で W1〜W4 警告判定や将来の集計（連続テストモード）に使う。
+  // - retry_hit_count: 全 aria-label 横断で見つかった Retry ボタン総数
+  //   （0 なら W4: aria-label セット全滅）
+  // - retry_aria_label_matched: 最初にヒットした Retry の aria-label
+  // - retry_ancestor_depth: 戦略 3 が成功した場合の depth
+  const meta = {
+    retry_hit_count: 0,
+    retry_aria_label_matched: null,
+    retry_ancestor_depth: null,
+  };
+  for (const label of ASSISTANT_RETRY_LABELS) {
+    const cnt = document.querySelectorAll(
+      `button[aria-label="${label}"]`,
+    ).length;
+    if (cnt > 0) {
+      meta.retry_hit_count += cnt;
+      if (meta.retry_aria_label_matched === null) {
+        meta.retry_aria_label_matched = label;
+      }
+    }
+  }
+
   // 戦略1: [data-testid="assistant-message"] — 将来 claude.ai が追加するかもしれないので最優先で残す
   const byTestid = document.querySelectorAll(
     '[data-testid="assistant-message"]',
@@ -407,6 +456,7 @@ function extractLatestAssistantMessage() {
         selector: '[data-testid="assistant-message"]',
         raw_length: raw.length,
         dedup,
+        extractionMeta: meta,
       };
     }
   }
@@ -425,6 +475,7 @@ function extractLatestAssistantMessage() {
         selector: '[data-message-author-role="assistant"]',
         raw_length: raw.length,
         dedup,
+        extractionMeta: meta,
       };
     }
   }
@@ -432,33 +483,33 @@ function extractLatestAssistantMessage() {
   // 戦略3: Retry ボタンの祖先（現状の claude.ai で確認された実経路）
   //  - button[aria-label="Retry"] は Claude 応答にのみ存在、user-message には無い
   //  - 最後の Retry ボタンを起点に、user-message を含まない最近接の祖先を取る
-  let retryButtons = [];
-  for (const label of ASSISTANT_RETRY_LABELS) {
-    const found = document.querySelectorAll(`button[aria-label="${label}"]`);
-    if (found.length > 0) {
-      retryButtons = Array.from(found);
-      break;
-    }
-  }
-  if (retryButtons.length > 0) {
-    const lastRetry = retryButtons[retryButtons.length - 1];
-    let cur = lastRetry.parentElement;
-    for (let depth = 0; depth < 10 && cur; depth++) {
-      if (cur.querySelector('[data-testid="user-message"]')) {
+  if (meta.retry_aria_label_matched) {
+    const found = document.querySelectorAll(
+      `button[aria-label="${meta.retry_aria_label_matched}"]`,
+    );
+    const retryButtons = Array.from(found);
+    if (retryButtons.length > 0) {
+      const lastRetry = retryButtons[retryButtons.length - 1];
+      let cur = lastRetry.parentElement;
+      for (let depth = 0; depth < 10 && cur; depth++) {
+        if (cur.querySelector('[data-testid="user-message"]')) {
+          cur = cur.parentElement;
+          continue;
+        }
+        const raw = cur.innerText || "";
+        const { text, dedup } = cleanAssistantText(raw);
+        if (text.length >= 1 && cur.contains(lastRetry)) {
+          meta.retry_ancestor_depth = depth;
+          return {
+            text,
+            selector: `fallback:retry-ancestor-depth-${depth}`,
+            raw_length: raw.length,
+            dedup,
+            extractionMeta: meta,
+          };
+        }
         cur = cur.parentElement;
-        continue;
       }
-      const raw = cur.innerText || "";
-      const { text, dedup } = cleanAssistantText(raw);
-      if (text.length >= 1 && cur.contains(lastRetry)) {
-        return {
-          text,
-          selector: `fallback:retry-ancestor-depth-${depth}`,
-          raw_length: raw.length,
-          dedup,
-        };
-      }
-      cur = cur.parentElement;
     }
   }
 
@@ -482,6 +533,7 @@ function extractLatestAssistantMessage() {
             selector: "fallback:after-last-user-message",
             raw_length: raw.length,
             dedup,
+            extractionMeta: meta,
           };
         }
       }
@@ -489,7 +541,13 @@ function extractLatestAssistantMessage() {
     }
   }
 
-  return { text: null, selector: null, raw_length: 0, dedup: null };
+  return {
+    text: null,
+    selector: null,
+    raw_length: 0,
+    dedup: null,
+    extractionMeta: meta,
+  };
 }
 
 // ============================================================
@@ -763,6 +821,7 @@ async function performSend(text) {
       responseError: "応答テキスト抽出失敗",
       assistantSnapshot: snapshot,
       assistantSnapshotKey: snapshotKey,
+      extractionMeta: extracted.extractionMeta,
     };
   }
   logPanel(
@@ -771,8 +830,8 @@ async function performSend(text) {
   );
 
   // Phase 2 C1: 重複検出 (Y) の発火状況をログ出力。
-  // X (テキスト安定化判定) が効いていれば Y は不発になる想定。
-  // 発火頻度は本番運用後の X チューニング判断材料になるため可視化する。
+  // 2026-05-14 実機検証で「Y が主役、X は補助」が判明（aria-live と画面表示の二重 render は claude.ai の常時的な仕様）。
+  // Y の発火頻度は将来 chatgpt.js / gemini.js の挙動比較や、X のチューニング判断材料になる。
   if (extracted.dedup) {
     if (extracted.dedup.kind === "prefix") {
       const prefixPara = extracted.dedup.prefix_idx + 1;
@@ -788,8 +847,62 @@ async function performSend(text) {
       );
     }
   } else {
-    logPanel("info", "prefix 重複検出: 発火せず（X 二重判定が機能）");
+    logPanel("info", "prefix 重複検出: 発火せず");
   }
+
+  // Phase 2 C3: 脆弱性検知の警告判定 (W1〜W4)。
+  // 「自動修復より観測性」の方針に従い、警告ログのみ。深刻度でレベルを分ける。
+  const meta = extracted.extractionMeta || {};
+  const sel = extracted.selector || "";
+  const firedWarnings = [];
+
+  // W1: 戦略 1 または 2 が成功 → claude.ai に新属性が追加された可能性 (歓迎すべき変化, info)
+  if (sel === '[data-testid="assistant-message"]') {
+    firedWarnings.push("W1");
+    logPanel(
+      "info",
+      "✨ claude.ai に [data-testid=\"assistant-message\"] 属性検出。戦略 1 が機能（DOM 改善）",
+    );
+  } else if (sel === '[data-message-author-role="assistant"]') {
+    firedWarnings.push("W1");
+    logPanel(
+      "info",
+      "✨ claude.ai に [data-message-author-role] 属性検出。戦略 2 が機能（DOM 改善）",
+    );
+  }
+
+  // W2: 戦略 3 の depth >= 5 → 階層変化の兆候 (warn)
+  if (
+    sel.startsWith("fallback:retry-ancestor-depth-") &&
+    meta.retry_ancestor_depth !== null &&
+    meta.retry_ancestor_depth >= 5
+  ) {
+    firedWarnings.push("W2");
+    logPanel(
+      "warn",
+      `⚠ Retry 祖先が深い (depth=${meta.retry_ancestor_depth})。DOM 階層変化の兆候、要観察`,
+    );
+  }
+
+  // W3: 戦略 4 (最終手段) 到達 → DOM 構造変化の可能性大 (error)
+  if (sel === "fallback:after-last-user-message") {
+    firedWarnings.push("W3");
+    logPanel(
+      "error",
+      "🚨 抽出が戦略 4 (最終手段) に到達。claude.ai DOM 構造変化の可能性大。要調査。",
+    );
+  }
+
+  // W4: Retry aria-label セット全滅 → aria-label 改名の可能性 (error)
+  if (meta.retry_hit_count === 0) {
+    firedWarnings.push("W4");
+    logPanel(
+      "error",
+      "🚨 Retry aria-label セット全滅。改名の可能性。DOM ロガーで再採取して ASSISTANT_RETRY_LABELS を更新してください。",
+    );
+  }
+
+  meta.warnings = firedWarnings;
 
   return {
     ...baseResult,
@@ -797,6 +910,7 @@ async function performSend(text) {
     responseSelector: extracted.selector,
     responseRawLength: extracted.raw_length,
     responseDedup: extracted.dedup,
+    extractionMeta: meta,
     snapshotCandidateCount: snapshot.candidate_count,
   };
 }
