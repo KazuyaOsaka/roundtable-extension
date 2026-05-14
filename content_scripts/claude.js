@@ -270,7 +270,39 @@ async function waitForResponseComplete(timeoutMs = 120000) {
     logPanel("warn", "停止ボタンが再出現。応答継続として待機を再開。");
     return await waitForResponseComplete(remaining);
   }
-  logPanel("ok", "停止ボタン消滅 → 応答完了");
+  logPanel("info", "停止ボタン消滅 → テキスト安定化を確認中...");
+
+  // 4) [Phase 2 A1] テキスト安定化判定（二重判定の後半）
+  //    停止ボタン消滅後も aria-live の途中スナップショット残留などで
+  //    DOM 更新が続くケースがあるため、抽出対象テキストが連続 2500ms
+  //    変化なしを確認してから「応答完了」と確定する。
+  //    最大 10 秒待っても安定化しない場合は警告して現在値で確定。
+  const STABLE_THRESHOLD_MS = 2500;
+  const STABLE_POLL_MS = 200;
+  const STABLE_MAX_WAIT_MS = 10000;
+
+  const stableStartedAt = Date.now();
+  let lastText = extractLatestAssistantMessage().text || "";
+  let stableSince = Date.now();
+  while (Date.now() - stableSince < STABLE_THRESHOLD_MS) {
+    await sleep(STABLE_POLL_MS);
+    const curText = extractLatestAssistantMessage().text || "";
+    if (curText !== lastText) {
+      lastText = curText;
+      stableSince = Date.now();
+    }
+    if (Date.now() - stableStartedAt > STABLE_MAX_WAIT_MS) {
+      logPanel(
+        "warn",
+        `テキスト安定化判定が ${STABLE_MAX_WAIT_MS}ms で打ち切り。現在のテキストで確定。`,
+      );
+      break;
+    }
+  }
+  logPanel(
+    "ok",
+    `応答完了（テキスト安定化確認 OK、安定化所要 ${Date.now() - stableStartedAt}ms）`,
+  );
   return { ok: true };
 }
 
@@ -288,8 +320,11 @@ const ASSISTANT_TEXT_SUFFIX_PATTERNS = [
   /\n\s*(Retry|再試行|Regenerate|再生成|Copy|コピー|Edit|編集|Give positive feedback|Give negative feedback|高評価|低評価|Bad response|Good response)\s*$/,
 ];
 
+// Phase 2 A1+C1: 戻り値を { text, dedup } 形式に変更。
+//   dedup が null なら重複検出は不発、オブジェクトなら発火。
+//   呼出側で発火状況をログ出力するために構造化情報を返す。
 function cleanAssistantText(raw) {
-  if (!raw) return "";
+  if (!raw) return { text: "", dedup: null };
   let text = raw.trim();
 
   // プレフィックス除去
@@ -298,14 +333,45 @@ function cleanAssistantText(raw) {
   }
 
   // 重複検出: aria-live が同じ本文を二重 render しているケース
+  // Phase 2: 完全一致に加え、prefix 一致（途中版 + 完全版）も検出する
+  let dedup = null;
   const parts = text
     .split(/\n\n+/)
     .map((s) => s.trim())
     .filter(Boolean);
-  if (parts.length >= 2 && parts[0] === parts[1]) {
-    text =
-      parts[0] +
-      (parts.length > 2 ? "\n\n" + parts.slice(2).join("\n\n") : "");
+  if (parts.length >= 2) {
+    const norm0 = parts[0].replace(/\s+/g, " ");
+    const norm1 = parts[1].replace(/\s+/g, " ");
+    let keepIdx = null; // 0 or 1: 採用する段落の index
+    let dedupKind = null;
+    let prefixIdx = null; // 0 or 1: prefix だった段落の index（prefix のみ）
+    if (norm0 === norm1) {
+      keepIdx = 0;
+      dedupKind = "exact";
+    } else if (norm1.startsWith(norm0)) {
+      // parts[0] が parts[1] の prefix → 長い parts[1] を採用
+      keepIdx = 1;
+      dedupKind = "prefix";
+      prefixIdx = 0;
+    } else if (norm0.startsWith(norm1)) {
+      // parts[1] が parts[0] の prefix → 長い parts[0] を採用
+      keepIdx = 0;
+      dedupKind = "prefix";
+      prefixIdx = 1;
+    }
+    if (keepIdx !== null) {
+      const kept = parts[keepIdx];
+      const dropped = parts[keepIdx === 0 ? 1 : 0];
+      text =
+        kept +
+        (parts.length > 2 ? "\n\n" + parts.slice(2).join("\n\n") : "");
+      dedup = {
+        kind: dedupKind,
+        prefix_idx: prefixIdx,
+        kept_length: kept.length,
+        dropped_length: dropped.length,
+      };
+    }
   }
 
   // 末尾の時刻 + アクションラベルが連続するパターンに対応するためループで剥がす
@@ -321,7 +387,7 @@ function cleanAssistantText(raw) {
     }
   }
 
-  return text.trim();
+  return { text: text.trim(), dedup };
 }
 
 const ASSISTANT_RETRY_LABELS = ["Retry", "再試行", "Regenerate", "再生成"];
@@ -334,12 +400,13 @@ function extractLatestAssistantMessage() {
   if (byTestid.length > 0) {
     const last = byTestid[byTestid.length - 1];
     const raw = last.innerText || "";
-    const text = cleanAssistantText(raw);
+    const { text, dedup } = cleanAssistantText(raw);
     if (text) {
       return {
         text,
         selector: '[data-testid="assistant-message"]',
         raw_length: raw.length,
+        dedup,
       };
     }
   }
@@ -351,12 +418,13 @@ function extractLatestAssistantMessage() {
   if (byAuthor.length > 0) {
     const last = byAuthor[byAuthor.length - 1];
     const raw = last.innerText || "";
-    const text = cleanAssistantText(raw);
+    const { text, dedup } = cleanAssistantText(raw);
     if (text) {
       return {
         text,
         selector: '[data-message-author-role="assistant"]',
         raw_length: raw.length,
+        dedup,
       };
     }
   }
@@ -381,12 +449,13 @@ function extractLatestAssistantMessage() {
         continue;
       }
       const raw = cur.innerText || "";
-      const text = cleanAssistantText(raw);
+      const { text, dedup } = cleanAssistantText(raw);
       if (text.length >= 1 && cur.contains(lastRetry)) {
         return {
           text,
           selector: `fallback:retry-ancestor-depth-${depth}`,
           raw_length: raw.length,
+          dedup,
         };
       }
       cur = cur.parentElement;
@@ -406,12 +475,13 @@ function extractLatestAssistantMessage() {
     while (node) {
       if (!node.querySelector('[data-testid="user-message"]')) {
         const raw = node.innerText || "";
-        const text = cleanAssistantText(raw);
+        const { text, dedup } = cleanAssistantText(raw);
         if (text.length >= 1) {
           return {
             text,
             selector: "fallback:after-last-user-message",
             raw_length: raw.length,
+            dedup,
           };
         }
       }
@@ -419,7 +489,7 @@ function extractLatestAssistantMessage() {
     }
   }
 
-  return { text: null, selector: null, raw_length: 0 };
+  return { text: null, selector: null, raw_length: 0, dedup: null };
 }
 
 // ============================================================
@@ -700,11 +770,33 @@ async function performSend(text) {
     `応答抽出成功 (selector=${extracted.selector}, ${extracted.text.length}字 / raw ${extracted.raw_length}字、スナップショット候補 ${snapshot.candidate_count} 件）`,
   );
 
+  // Phase 2 C1: 重複検出 (Y) の発火状況をログ出力。
+  // X (テキスト安定化判定) が効いていれば Y は不発になる想定。
+  // 発火頻度は本番運用後の X チューニング判断材料になるため可視化する。
+  if (extracted.dedup) {
+    if (extracted.dedup.kind === "prefix") {
+      const prefixPara = extracted.dedup.prefix_idx + 1;
+      const otherPara = prefixPara === 1 ? 2 : 1;
+      logPanel(
+        "warn",
+        `⚠ prefix 重複検出: 段落 ${prefixPara} が段落 ${otherPara} の prefix → 長い方 (${extracted.dedup.kept_length}字) を採用、短い方 (${extracted.dedup.dropped_length}字) を破棄`,
+      );
+    } else if (extracted.dedup.kind === "exact") {
+      logPanel(
+        "warn",
+        `⚠ 完全一致重複検出: 段落 1 と段落 2 が同一 → 統合 (${extracted.dedup.kept_length}字)`,
+      );
+    }
+  } else {
+    logPanel("info", "prefix 重複検出: 発火せず（X 二重判定が機能）");
+  }
+
   return {
     ...baseResult,
     responseText: extracted.text,
     responseSelector: extracted.selector,
     responseRawLength: extracted.raw_length,
+    responseDedup: extracted.dedup,
     snapshotCandidateCount: snapshot.candidate_count,
   };
 }
