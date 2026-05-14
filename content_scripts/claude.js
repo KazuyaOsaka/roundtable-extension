@@ -274,38 +274,126 @@ async function waitForResponseComplete(timeoutMs = 120000) {
   return { ok: true };
 }
 
+// innerText に混入する aria-live スクリーンリーダー用プレフィックス
+const ASSISTANT_TEXT_PREFIXES = [
+  /^Claudeが返答しました:\s*/,
+  /^Claude responded:\s*/,
+  /^Claude replied:\s*/,
+  /^Assistant said:\s*/,
+];
+
+// 末尾のタイムスタンプ / アクションボタンラベル
+const ASSISTANT_TEXT_SUFFIX_PATTERNS = [
+  /\n\s*\d{1,2}:\d{2}\s*$/, // 末尾の HH:MM
+  /\n\s*(Retry|再試行|Regenerate|再生成|Copy|コピー|Edit|編集|Give positive feedback|Give negative feedback|高評価|低評価|Bad response|Good response)\s*$/,
+];
+
+function cleanAssistantText(raw) {
+  if (!raw) return "";
+  let text = raw.trim();
+
+  // プレフィックス除去
+  for (const pat of ASSISTANT_TEXT_PREFIXES) {
+    text = text.replace(pat, "");
+  }
+
+  // 重複検出: aria-live が同じ本文を二重 render しているケース
+  const parts = text
+    .split(/\n\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length >= 2 && parts[0] === parts[1]) {
+    text =
+      parts[0] +
+      (parts.length > 2 ? "\n\n" + parts.slice(2).join("\n\n") : "");
+  }
+
+  // 末尾の時刻 + アクションラベルが連続するパターンに対応するためループで剥がす
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const pat of ASSISTANT_TEXT_SUFFIX_PATTERNS) {
+      const newText = text.replace(pat, "").trim();
+      if (newText !== text) {
+        text = newText;
+        changed = true;
+      }
+    }
+  }
+
+  return text.trim();
+}
+
+const ASSISTANT_RETRY_LABELS = ["Retry", "再試行", "Regenerate", "再生成"];
+
 function extractLatestAssistantMessage() {
-  // 候補1: data-testid="assistant-message"
+  // 戦略1: [data-testid="assistant-message"] — 将来 claude.ai が追加するかもしれないので最優先で残す
   const byTestid = document.querySelectorAll(
     '[data-testid="assistant-message"]',
   );
   if (byTestid.length > 0) {
     const last = byTestid[byTestid.length - 1];
-    const text = (last.innerText || "").trim();
+    const raw = last.innerText || "";
+    const text = cleanAssistantText(raw);
     if (text) {
       return {
         text,
         selector: '[data-testid="assistant-message"]',
+        raw_length: raw.length,
       };
     }
   }
 
-  // 候補2: data-message-author-role="assistant"
+  // 戦略2: [data-message-author-role="assistant"]
   const byAuthor = document.querySelectorAll(
     '[data-message-author-role="assistant"]',
   );
   if (byAuthor.length > 0) {
     const last = byAuthor[byAuthor.length - 1];
-    const text = (last.innerText || "").trim();
+    const raw = last.innerText || "";
+    const text = cleanAssistantText(raw);
     if (text) {
       return {
         text,
         selector: '[data-message-author-role="assistant"]',
+        raw_length: raw.length,
       };
     }
   }
 
-  // 候補3: user-message の次にある assistant らしき要素を兄弟方向に辿る
+  // 戦略3: Retry ボタンの祖先（現状の claude.ai で確認された実経路）
+  //  - button[aria-label="Retry"] は Claude 応答にのみ存在、user-message には無い
+  //  - 最後の Retry ボタンを起点に、user-message を含まない最近接の祖先を取る
+  let retryButtons = [];
+  for (const label of ASSISTANT_RETRY_LABELS) {
+    const found = document.querySelectorAll(`button[aria-label="${label}"]`);
+    if (found.length > 0) {
+      retryButtons = Array.from(found);
+      break;
+    }
+  }
+  if (retryButtons.length > 0) {
+    const lastRetry = retryButtons[retryButtons.length - 1];
+    let cur = lastRetry.parentElement;
+    for (let depth = 0; depth < 10 && cur; depth++) {
+      if (cur.querySelector('[data-testid="user-message"]')) {
+        cur = cur.parentElement;
+        continue;
+      }
+      const raw = cur.innerText || "";
+      const text = cleanAssistantText(raw);
+      if (text.length >= 1 && cur.contains(lastRetry)) {
+        return {
+          text,
+          selector: `fallback:retry-ancestor-depth-${depth}`,
+          raw_length: raw.length,
+        };
+      }
+      cur = cur.parentElement;
+    }
+  }
+
+  // 戦略4: 最後の user-message の次の兄弟要素を辿る（最終手段）
   const users = document.querySelectorAll('[data-testid="user-message"]');
   if (users.length > 0) {
     const lastUser = users[users.length - 1];
@@ -316,21 +404,22 @@ function extractLatestAssistantMessage() {
       : null;
     let node = startNode;
     while (node) {
-      const containsUserMessage = node.querySelector(
-        '[data-testid="user-message"]',
-      );
-      const text = (node.innerText || "").trim();
-      if (text && !containsUserMessage) {
-        return {
-          text,
-          selector: "fallback:after-last-user-message",
-        };
+      if (!node.querySelector('[data-testid="user-message"]')) {
+        const raw = node.innerText || "";
+        const text = cleanAssistantText(raw);
+        if (text.length >= 1) {
+          return {
+            text,
+            selector: "fallback:after-last-user-message",
+            raw_length: raw.length,
+          };
+        }
       }
       node = node.nextElementSibling;
     }
   }
 
-  return { text: null, selector: null };
+  return { text: null, selector: null, raw_length: 0 };
 }
 
 // ============================================================
@@ -608,13 +697,14 @@ async function performSend(text) {
   }
   logPanel(
     "ok",
-    `応答抽出成功 (selector=${extracted.selector}, ${extracted.text.length}字、スナップショット候補 ${snapshot.candidate_count} 件）`,
+    `応答抽出成功 (selector=${extracted.selector}, ${extracted.text.length}字 / raw ${extracted.raw_length}字、スナップショット候補 ${snapshot.candidate_count} 件）`,
   );
 
   return {
     ...baseResult,
     responseText: extracted.text,
     responseSelector: extracted.selector,
+    responseRawLength: extracted.raw_length,
     snapshotCandidateCount: snapshot.candidate_count,
   };
 }

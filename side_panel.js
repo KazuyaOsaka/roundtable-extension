@@ -452,8 +452,12 @@ $send.addEventListener("click", async () => {
           `submit=${response.usedSubmitSelector || "?"})`,
       );
       if (response.responseText) {
+        const rawLenNote =
+          typeof response.responseRawLength === "number"
+            ? ` / raw ${response.responseRawLength}字`
+            : "";
         logOk(
-          `応答受信 (selector=${response.responseSelector}, ${response.responseText.length}字)`,
+          `応答受信 (selector=${response.responseSelector}, ${response.responseText.length}字${rawLenNote})`,
         );
         appendResponseBlock({
           text: response.responseText,
