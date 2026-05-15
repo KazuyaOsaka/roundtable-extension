@@ -340,16 +340,23 @@
           <button
             id="dom-logger"
             type="button"
-            title="60秒間 MutationObserver で claude.ai の DOM 変化を採取"
+            title="60秒間 MutationObserver で claude.ai の DOM 変化を採取（手動）"
           >
-            📋 DOMロガー (60秒)
+            📋 手動DOMロガー (60秒)
           </button>
           <button
             id="show-latest-log"
             type="button"
-            title="chrome.storage.local に保存済みの最新 DOM ログを表示"
+            title="chrome.storage.local に保存済みの最新 手動DOMログを表示"
           >
-            📂 最新DOMログ
+            📂 最新手動ログ
+          </button>
+          <button
+            id="show-latest-auto-log"
+            type="button"
+            title="応答セッション中のエラー時に自動採取された最新 DOM ログを表示"
+          >
+            📂 最新自動ログ
           </button>
           <button
             id="show-latest-snapshot"

@@ -14,6 +14,7 @@ const $clear = document.getElementById("clear-log");
 const $domLogger = document.getElementById("dom-logger");
 const $showLatestLog = document.getElementById("show-latest-log");
 const $showLatestSnapshot = document.getElementById("show-latest-snapshot");
+const $showLatestAutoLog = document.getElementById("show-latest-auto-log");
 const $ping = document.getElementById("ping");
 const $tabSelect = document.getElementById("tab-select");
 const $reloadTabs = document.getElementById("reload-tabs");
@@ -375,6 +376,35 @@ $showLatestLog.addEventListener("click", async () => {
     logError(`通信エラー: ${e && e.message ? e.message : e}`);
   } finally {
     $showLatestLog.disabled = false;
+  }
+});
+
+$showLatestAutoLog.addEventListener("click", async () => {
+  $showLatestAutoLog.disabled = true;
+  logInfo("chrome.storage.local から最新自動ログを取得...");
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "get_latest_auto_dom_log",
+    });
+    if (response && response.ok) {
+      const r = response.result || {};
+      logOk(
+        `最新自動ログ取得成功 (storage_key=${response.storage_key}, trigger=${r.trigger || "?"}, 全 ${response.total_logs} 件中の最新, events=${r.event_count || 0})`,
+      );
+      appendJsonBlock({
+        title: `自動採取ログ (trigger=${r.trigger || "?"})`,
+        json: response.result,
+        storageKey: response.storage_key,
+      });
+    } else {
+      logWarn(
+        `最新自動ログ取得失敗: ${response && response.error ? response.error : "(原因不明)"}`,
+      );
+    }
+  } catch (e) {
+    logError(`通信エラー: ${e && e.message ? e.message : e}`);
+  } finally {
+    $showLatestAutoLog.disabled = false;
   }
 });
 

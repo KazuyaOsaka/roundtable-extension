@@ -243,6 +243,28 @@ async function handleListDomLogs() {
   }
 }
 
+// Phase 2 A4: 自動採取ログ (auto_dom_log_*) の最新を取得
+async function handleGetLatestAutoDomLog() {
+  try {
+    const all = await chrome.storage.local.get(null);
+    const keys = Object.keys(all)
+      .filter((k) => k.startsWith("auto_dom_log_"))
+      .sort();
+    if (keys.length === 0) {
+      return { ok: false, error: "保存された自動採取ログがありません。" };
+    }
+    const latestKey = keys[keys.length - 1];
+    return {
+      ok: true,
+      storage_key: latestKey,
+      result: all[latestKey],
+      total_logs: keys.length,
+    };
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : String(e) };
+  }
+}
+
 async function handleGetLatestAssistantSnapshot() {
   try {
     const all = await chrome.storage.local.get(null);
@@ -309,6 +331,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === "get_latest_assistant_snapshot") {
     handleGetLatestAssistantSnapshot().then(sendResponse);
+    return true;
+  }
+
+  if (msg.type === "get_latest_auto_dom_log") {
+    handleGetLatestAutoDomLog().then(sendResponse);
     return true;
   }
 

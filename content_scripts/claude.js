@@ -303,10 +303,10 @@ async function waitForResponseComplete(settings = {}) {
     }
     await sleep(150);
   }
-  logPanel("info", `停止ボタン出現 → 応答中 (selector=${firstHit.selector})`);
+  logPanel("info", `[Wait] 停止ボタン出現 → 応答中 (selector=${firstHit.selector})`);
   logPanel(
     "info",
-    `無音タイムアウト=${silenceTimeoutSec}秒、バックストップ=${Math.round(BACKSTOP_TIMEOUT_MS / 1000)}秒`,
+    `[A3] 無音タイムアウト=${silenceTimeoutSec}秒、バックストップ=${Math.round(BACKSTOP_TIMEOUT_MS / 1000)}秒`,
   );
 
   // 2) 停止ボタン消滅を待つ + 無音タイムアウト判定（A3）
@@ -349,7 +349,7 @@ async function waitForResponseComplete(settings = {}) {
         lastThinkingLogAt = now;
         logPanel(
           "info",
-          `Thinking バッジ検出 (selector=${thinking.selector})、無音タイムアウトをリセット`,
+          `[A3] Thinking バッジ検出 (selector=${thinking.selector})、無音タイムアウトをリセット`,
         );
       }
     }
@@ -370,7 +370,7 @@ async function waitForResponseComplete(settings = {}) {
       lastHeartbeat = now;
       logPanel(
         "info",
-        `応答中... ${Math.round(elapsed / 1000)}秒経過 (無音 ${Math.round(silenceMs / 1000)}秒, Thinking ${thinkingHitCount}回)`,
+        `[Wait] 応答中... ${Math.round(elapsed / 1000)}秒経過 (無音 ${Math.round(silenceMs / 1000)}秒, Thinking ${thinkingHitCount}回)`,
       );
     }
     await sleep(300);
@@ -379,10 +379,10 @@ async function waitForResponseComplete(settings = {}) {
   // 3) 消滅の安定化（瞬間的な再出現の保険）
   await sleep(500);
   if (findStopButton()) {
-    logPanel("warn", "停止ボタンが再出現。応答継続として待機を再開。");
+    logPanel("warn", "[Wait] 停止ボタンが再出現。応答継続として待機を再開。");
     return await waitForResponseComplete(settings);
   }
-  logPanel("info", "停止ボタン消滅 → テキスト安定化を確認中...");
+  logPanel("info", "[A1] 停止ボタン消滅 → テキスト安定化を確認中...");
 
   // 4) [Phase 2 A1] テキスト安定化判定（二重判定の後半）
   //    停止ボタン消滅後も aria-live の途中スナップショット残留などで
@@ -406,14 +406,14 @@ async function waitForResponseComplete(settings = {}) {
     if (Date.now() - stableStartedAt > STABLE_MAX_WAIT_MS) {
       logPanel(
         "warn",
-        `テキスト安定化判定が ${STABLE_MAX_WAIT_MS}ms で打ち切り。現在のテキストで確定。`,
+        `[A1] テキスト安定化判定が ${STABLE_MAX_WAIT_MS}ms で打ち切り。現在のテキストで確定。`,
       );
       break;
     }
   }
   logPanel(
     "ok",
-    `応答完了（テキスト安定化確認 OK、安定化所要 ${Date.now() - stableStartedAt}ms）`,
+    `[A1] 応答完了（テキスト安定化確認 OK、安定化所要 ${Date.now() - stableStartedAt}ms）`,
   );
   return { ok: true };
 }
@@ -826,10 +826,16 @@ async function performSend(text, settings = {}) {
     return { ok: false, error: "本文が空です。" };
   }
 
+  // Phase 2 A4: 応答セッション中の AutoDomLogger を起動。
+  // try-finally で確実に停止。エラー時は trigger 付きで save する。
+  autoDomLogger.start();
+  let autoLogSaved = false;
+  try {
+
   // 0. 事前 Cloudflare チェック
   const preCf = detectCloudflare();
   if (preCf.detected) {
-    const m = `Cloudflare検知（送信前）: ${preCf.by}。操作を中止します。`;
+    const m = `[CF] Cloudflare検知（送信前）: ${preCf.by}。操作を中止します。`;
     logPanel("error", m);
     return { ok: false, error: m, cloudflare: true };
   }
@@ -838,11 +844,11 @@ async function performSend(text, settings = {}) {
   const inputResult = findFirst(INPUT_SELECTORS);
   if (!inputResult) {
     const m =
-      "入力欄が見つかりません（セレクタチェーン全滅）。claude.ai の画面が完全にロードされているか確認してください。";
+      "[Send] 入力欄が見つかりません（セレクタチェーン全滅）。claude.ai の画面が完全にロードされているか確認してください。";
     logPanel("error", m);
     return { ok: false, error: m };
   }
-  logPanel("info", `入力欄ヒット: ${inputResult.selector}`);
+  logPanel("info", `[Send] 入力欄ヒット: ${inputResult.selector}`);
 
   // 2. 注入（3手段フォールバック）
   let usedInjectMethod = null;
@@ -851,19 +857,19 @@ async function performSend(text, settings = {}) {
       const ok = await method.fn(inputResult.element, text);
       if (ok) {
         usedInjectMethod = method.name;
-        logPanel("ok", `注入成功: ${method.name}`);
+        logPanel("ok", `[Inject] 注入成功: ${method.name}`);
         break;
       }
-      logPanel("warn", `注入失敗（本文未反映）: ${method.name}`);
+      logPanel("warn", `[Inject] 注入失敗（本文未反映）: ${method.name}`);
     } catch (e) {
       logPanel(
         "warn",
-        `注入エラー (${method.name}): ${e && e.message ? e.message : e}`,
+        `[Inject] 注入エラー (${method.name}): ${e && e.message ? e.message : e}`,
       );
     }
   }
   if (!usedInjectMethod) {
-    const m = "TipTap注入の3手段すべてに失敗しました。Kazuya に報告してください。";
+    const m = "[Inject] TipTap注入の3手段すべてに失敗しました。Kazuya に報告してください。";
     logPanel("error", m);
     return {
       ok: false,
@@ -874,7 +880,7 @@ async function performSend(text, settings = {}) {
 
   // 3. 送信前ランダム待機
   const preDelay = rand(200, 600);
-  logPanel("info", `送信ボタン押下前の待機: ${Math.round(preDelay)}ms`);
+  logPanel("info", `[Submit] 送信ボタン押下前の待機: ${Math.round(preDelay)}ms`);
   await sleep(preDelay);
 
   // 4. 送信ボタン
@@ -883,11 +889,11 @@ async function performSend(text, settings = {}) {
     const fb = findSubmitFallback();
     if (fb) {
       submitResult = fb;
-      logPanel("info", `送信ボタン: フォールバック取得 (${fb.selector})`);
+      logPanel("info", `[Submit] 送信ボタン: フォールバック取得 (${fb.selector})`);
     }
   }
   if (!submitResult) {
-    const m = "送信ボタンが見つかりません。";
+    const m = "[Submit] 送信ボタンが見つかりません。";
     logPanel("error", m);
     return {
       ok: false,
@@ -899,21 +905,21 @@ async function performSend(text, settings = {}) {
   if (submitResult.element.disabled) {
     logPanel(
       "warn",
-      "送信ボタンが disabled。本文がエディタの内部状態に届いていない可能性。",
+      "[Submit] 送信ボタンが disabled。本文がエディタの内部状態に届いていない可能性。",
     );
   } else {
-    logPanel("info", `送信ボタンヒット: ${submitResult.selector}`);
+    logPanel("info", `[Submit] 送信ボタンヒット: ${submitResult.selector}`);
   }
 
   // 5. クリック (pointerdown -> pointerup -> click)
   await clickSubmit(submitResult.element);
-  logPanel("info", "送信ボタン dispatch 完了 (pointerdown→pointerup→click)");
+  logPanel("info", "[Submit] 送信ボタン dispatch 完了 (pointerdown→pointerup→click)");
 
   // 6. 事後 Cloudflare チェック
   await sleep(800);
   const postCf = detectCloudflare();
   if (postCf.detected) {
-    const m = `Cloudflare検知（送信後）: ${postCf.by}。Step 1A は中止して Kazuya に報告してください。`;
+    const m = `[CF] Cloudflare検知（送信後）: ${postCf.by}。Step 1A は中止して Kazuya に報告してください。`;
     logPanel("error", m);
     return {
       ok: false,
@@ -933,9 +939,18 @@ async function performSend(text, settings = {}) {
   };
 
   // 7. 応答完了待機
-  logPanel("info", "応答完了を待機中...");
+  logPanel("info", "[Wait] 応答完了を待機中...");
   const waitResult = await waitForResponseComplete(settings);
   if (!waitResult.ok) {
+    // Phase 2 A4: 待機系エラーの trigger 分類
+    let trigger = "wait_failed";
+    if (waitResult.silenceTimeout) trigger = "silence_timeout";
+    else if (waitResult.backstop) trigger = "backstop_timeout";
+    else if (waitResult.error && waitResult.error.includes("停止ボタンが10秒")) {
+      trigger = "stop_button_no_appear";
+    }
+    await autoDomLogger.save(trigger);
+    autoLogSaved = true;
     logPanel("warn", waitResult.error);
     return { ...baseResult, responseError: waitResult.error };
   }
@@ -949,19 +964,23 @@ async function performSend(text, settings = {}) {
   const extracted = extractLatestAssistantMessage();
   if (!extracted.text) {
     const m =
-      "応答テキストの抽出に失敗。セレクタ候補（assistant-message / data-message-author-role / fallback）全滅。スナップショットを採取して返します。";
+      "[Extract] 応答テキストの抽出に失敗。セレクタ候補（assistant-message / data-message-author-role / fallback）全滅。スナップショットを採取して返します。";
     logPanel("warn", m);
 
     const snapshotKey = `assistant_snapshot_${Date.now()}`;
     try {
       await chrome.storage.local.set({ [snapshotKey]: snapshot });
-      logPanel("info", `スナップショット保存: ${snapshotKey}（候補 ${snapshot.candidate_count} 件）`);
+      logPanel("info", `[Extract] スナップショット保存: ${snapshotKey}（候補 ${snapshot.candidate_count} 件）`);
     } catch (e) {
       logPanel(
         "warn",
-        `スナップショットの storage 保存に失敗: ${e && e.message ? e.message : e}`,
+        `[Extract] スナップショットの storage 保存に失敗: ${e && e.message ? e.message : e}`,
       );
     }
+
+    // Phase 2 A4: T3 抽出失敗トリガー
+    await autoDomLogger.save("extract_failed");
+    autoLogSaved = true;
 
     return {
       ...baseResult,
@@ -973,7 +992,7 @@ async function performSend(text, settings = {}) {
   }
   logPanel(
     "ok",
-    `応答抽出成功 (selector=${extracted.selector}, ${extracted.text.length}字 / raw ${extracted.raw_length}字、スナップショット候補 ${snapshot.candidate_count} 件）`,
+    `[Extract] 応答抽出成功 (selector=${extracted.selector}, ${extracted.text.length}字 / raw ${extracted.raw_length}字、スナップショット候補 ${snapshot.candidate_count} 件）`,
   );
 
   // Phase 2 C1: 重複検出 (Y) の発火状況をログ出力。
@@ -985,31 +1004,31 @@ async function performSend(text, settings = {}) {
       const otherPara = prefixPara === 1 ? 2 : 1;
       logPanel(
         "warn",
-        `⚠ prefix 重複検出: 段落 ${prefixPara} が段落 ${otherPara} の prefix → 長い方 (${extracted.dedup.kept_length}字) を採用、短い方 (${extracted.dedup.dropped_length}字) を破棄`,
+        `[C1] ⚠ prefix 重複検出: 段落 ${prefixPara} が段落 ${otherPara} の prefix → 長い方 (${extracted.dedup.kept_length}字) を採用、短い方 (${extracted.dedup.dropped_length}字) を破棄`,
       );
     } else if (extracted.dedup.kind === "exact") {
       logPanel(
         "warn",
-        `⚠ 完全一致重複検出: 段落 1 と段落 2 が同一 → 統合 (${extracted.dedup.kept_length}字)`,
+        `[C1] ⚠ 完全一致重複検出: 段落 1 と段落 2 が同一 → 統合 (${extracted.dedup.kept_length}字)`,
       );
     }
   } else {
-    logPanel("info", "prefix 重複検出: 発火せず");
+    logPanel("info", "[C1] prefix 重複検出: 発火せず");
     // Phase 2 A2+C3 fix: 診断ログ。Y 不発だが長い段落が複数あった場合は
     // raw text の頭を出して、取り損ねパターンの解析材料にする。
     if (extracted.diagnostic) {
       const diag = extracted.diagnostic;
       logPanel(
         "info",
-        `[診断] 段落 ${diag.num_parts} 個、長さ [${diag.part_lengths.join(", ")}]字`,
+        `[C1:診断] 段落 ${diag.num_parts} 個、長さ [${diag.part_lengths.join(", ")}]字`,
       );
       logPanel(
         "info",
-        `[診断] 段落1 head: "${diag.part_heads[0]}..."`,
+        `[C1:診断] 段落1 head: "${diag.part_heads[0]}..."`,
       );
       logPanel(
         "info",
-        `[診断] 段落2 head: "${diag.part_heads[1]}..."`,
+        `[C1:診断] 段落2 head: "${diag.part_heads[1]}..."`,
       );
     }
   }
@@ -1025,13 +1044,13 @@ async function performSend(text, settings = {}) {
     firedWarnings.push("W1");
     logPanel(
       "info",
-      "✨ claude.ai に [data-testid=\"assistant-message\"] 属性検出。戦略 1 が機能（DOM 改善）",
+      "[C3:W1] ✨ claude.ai に [data-testid=\"assistant-message\"] 属性検出。戦略 1 が機能（DOM 改善）",
     );
   } else if (sel === '[data-message-author-role="assistant"]') {
     firedWarnings.push("W1");
     logPanel(
       "info",
-      "✨ claude.ai に [data-message-author-role] 属性検出。戦略 2 が機能（DOM 改善）",
+      "[C3:W1] ✨ claude.ai に [data-message-author-role] 属性検出。戦略 2 が機能（DOM 改善）",
     );
   }
 
@@ -1046,7 +1065,7 @@ async function performSend(text, settings = {}) {
     firedWarnings.push("W2");
     logPanel(
       "warn",
-      `⚠ Retry 祖先が深い (depth=${meta.retry_ancestor_depth})。DOM 階層変化の兆候、要観察`,
+      `[C3:W2] ⚠ Retry 祖先が深い (depth=${meta.retry_ancestor_depth})。DOM 階層変化の兆候、要観察`,
     );
   }
 
@@ -1055,7 +1074,7 @@ async function performSend(text, settings = {}) {
     firedWarnings.push("W3");
     logPanel(
       "error",
-      "🚨 抽出が戦略 4 (最終手段) に到達。claude.ai DOM 構造変化の可能性大。要調査。",
+      "[C3:W3] 🚨 抽出が戦略 4 (最終手段) に到達。claude.ai DOM 構造変化の可能性大。要調査。",
     );
   }
 
@@ -1064,11 +1083,21 @@ async function performSend(text, settings = {}) {
     firedWarnings.push("W4");
     logPanel(
       "error",
-      "🚨 Retry aria-label セット全滅。改名の可能性。DOM ロガーで再採取して ASSISTANT_RETRY_LABELS を更新してください。",
+      "[C3:W4] 🚨 Retry aria-label セット全滅。改名の可能性。DOM ロガーで再採取して ASSISTANT_RETRY_LABELS を更新してください。",
     );
   }
 
   meta.warnings = firedWarnings;
+
+  // Phase 2 A4: T4 W3/W4 警告トリガー（独立キーで保存して因果関係を保つ）
+  if (firedWarnings.includes("W3")) {
+    await autoDomLogger.save("warn_w3");
+    autoLogSaved = true;
+  }
+  if (firedWarnings.includes("W4")) {
+    await autoDomLogger.save("warn_w4");
+    autoLogSaved = true;
+  }
 
   return {
     ...baseResult,
@@ -1079,6 +1108,9 @@ async function performSend(text, settings = {}) {
     extractionMeta: meta,
     snapshotCandidateCount: snapshot.candidate_count,
   };
+  } finally {
+    autoDomLogger.stop(autoLogSaved);
+  }
 }
 
 // ============================================================
@@ -1165,7 +1197,7 @@ const domLogger = {
         this.truncated = true;
         logPanel(
           "warn",
-          `DOMロガー: イベント上限 ${DOM_LOG_MAX_EVENTS} 件に到達。以降は記録を打ち切ります。`,
+          `[DOM] 手動DOMロガー: イベント上限 ${DOM_LOG_MAX_EVENTS} 件に到達。以降は記録を打ち切ります。`,
         );
       }
       return;
@@ -1200,7 +1232,7 @@ const domLogger = {
 
     logPanel(
       "ok",
-      `DOMロガー開始 (${DOM_LOG_DURATION_MS / 1000} 秒)。claude.ai タブで送信→応答を1往復してください。`,
+      `[DOM] 手動DOMロガー開始 (${DOM_LOG_DURATION_MS / 1000} 秒)。claude.ai タブで送信→応答を1往復してください。`,
     );
 
     let remaining = Math.floor(DOM_LOG_DURATION_MS / 1000);
@@ -1209,14 +1241,14 @@ const domLogger = {
       if (remaining > 0) {
         logPanel(
           "info",
-          `DOMロガー実行中... 残り ${remaining} 秒（採取 ${this.events.length} 件）`,
+          `[DOM] 手動DOMロガー実行中... 残り ${remaining} 秒（採取 ${this.events.length} 件）`,
         );
       }
     }, DOM_LOG_COUNTDOWN_STEP_MS);
 
     this.endTimer = setTimeout(() => {
       this.stop().catch((e) =>
-        logPanel("error", `DOMロガー停止時エラー: ${e && e.message ? e.message : e}`),
+        logPanel("error", `[DOM] 手動DOMロガー停止時エラー: ${e && e.message ? e.message : e}`),
       );
     }, DOM_LOG_DURATION_MS);
 
@@ -1252,12 +1284,12 @@ const domLogger = {
       await chrome.storage.local.set({ [key]: result });
       logPanel(
         "ok",
-        `DOMロガー終了。chrome.storage.local["${key}"] に保存（${result.event_count} 件、truncated=${result.truncated}）`,
+        `[DOM] 手動DOMロガー終了。chrome.storage.local["${key}"] に保存（${result.event_count} 件、truncated=${result.truncated}）`,
       );
     } catch (e) {
       logPanel(
         "error",
-        `DOMロガー結果の storage 保存に失敗: ${e && e.message ? e.message : e}`,
+        `[DOM] 手動DOMロガー結果の storage 保存に失敗: ${e && e.message ? e.message : e}`,
       );
     }
 
@@ -1271,6 +1303,156 @@ const domLogger = {
 
     this.events = [];
     return { storage_key: key, result };
+  },
+};
+
+// ============================================================
+// Phase 2 A4: AutoDomLogger（応答セッション中のリングバッファ + エラー時自動保存）
+// ------------------------------------------------------------
+//   - performSend の入口で start、出口で stop
+//   - 送信直後 1 秒は観察開始を遅延（送信時 DOM 変化のノイズ回避）
+//   - 過去 60 秒分のイベントだけ保持（イベント数 2000 件で古い 10% を drop）
+//   - エラートリガー検知時に save(trigger) で直近 60 秒を独立キーで保存
+//   - 保存時に古い auto_dom_log_* キーを最大 10 件まで自動削除
+//   - ストレージキー prefix は手動ロガー (dom_log_*) と分離
+// ============================================================
+
+const AUTO_LOG_WINDOW_MS = 60000;
+const AUTO_LOG_MAX_EVENTS = 2000;
+const AUTO_LOG_START_DELAY_MS = 1000;
+const AUTO_LOG_MAX_STORED = 10;
+const AUTO_LOG_KEY_PREFIX = "auto_dom_log_";
+
+const autoDomLogger = {
+  running: false,
+  startTime: 0,
+  startWallTime: 0,
+  events: [],
+  observer: null,
+  delayedStartTimer: null,
+
+  _recordOne(node, type) {
+    if (!this.observer) return; // 遅延起動の前
+    const cat = classifyDomNode(node);
+    if (!cat) return;
+    if (this.events.length >= AUTO_LOG_MAX_EVENTS) {
+      // リング動作: 古い 10% を drop
+      this.events.splice(0, Math.floor(AUTO_LOG_MAX_EVENTS * 0.1));
+    }
+    this.events.push(snapshotDomNode(node, cat, type, this.startTime));
+  },
+
+  _recordSubtree(node, type) {
+    if (!(node instanceof Element)) return;
+    this._recordOne(node, type);
+    if (typeof node.querySelectorAll !== "function") return;
+    const matches = node.querySelectorAll(DOM_LOG_CANDIDATE_SELECTOR);
+    for (const el of matches) this._recordOne(el, type);
+  },
+
+  start() {
+    if (this.running) return;
+    this.running = true;
+    this.startWallTime = Date.now();
+    this.events = [];
+    this.observer = null;
+    logPanel(
+      "info",
+      `[AutoLog] 自動採取準備（${AUTO_LOG_START_DELAY_MS}ms 後に観察開始、ノイズ回避）`,
+    );
+    this.delayedStartTimer = setTimeout(() => {
+      if (!this.running) return; // すでに stop された
+      this.startTime = performance.now();
+      this.observer = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          for (const n of m.addedNodes) this._recordSubtree(n, "added");
+          for (const n of m.removedNodes) this._recordSubtree(n, "removed");
+        }
+      });
+      this.observer.observe(document.body, { childList: true, subtree: true });
+      logPanel("info", "[AutoLog] 自動採取開始（リングバッファ 60秒）");
+    }, AUTO_LOG_START_DELAY_MS);
+  },
+
+  async save(trigger) {
+    if (!this.running) return null;
+    if (!this.observer) {
+      logPanel(
+        "info",
+        `[AutoLog] 自動採取保存スキップ trigger=${trigger}（観察開始前）`,
+      );
+      return null;
+    }
+    const nowMs = performance.now() - this.startTime;
+    const windowStart = nowMs - AUTO_LOG_WINDOW_MS;
+    const recentEvents = this.events.filter((e) => e.t_ms >= windowStart);
+    const result = {
+      captured_at: new Date().toISOString(),
+      trigger,
+      url: window.location.href,
+      window_ms: AUTO_LOG_WINDOW_MS,
+      session_started_at: new Date(this.startWallTime).toISOString(),
+      observer_started_after_delay_ms: AUTO_LOG_START_DELAY_MS,
+      event_count: recentEvents.length,
+      events: recentEvents,
+    };
+    const key = `${AUTO_LOG_KEY_PREFIX}${Date.now()}_${trigger}`;
+    try {
+      await chrome.storage.local.set({ [key]: result });
+      logPanel(
+        "info",
+        `[AutoLog] 自動採取保存 trigger=${trigger}, key=${key}, events=${result.event_count}`,
+      );
+      await this._cleanupOldKeys();
+    } catch (e) {
+      logPanel(
+        "warn",
+        `[AutoLog] 自動採取保存失敗: ${e && e.message ? e.message : e}`,
+      );
+    }
+    return { storage_key: key, result };
+  },
+
+  async _cleanupOldKeys() {
+    try {
+      const all = await chrome.storage.local.get(null);
+      const autoKeys = Object.keys(all).filter((k) =>
+        k.startsWith(AUTO_LOG_KEY_PREFIX),
+      );
+      if (autoKeys.length <= AUTO_LOG_MAX_STORED) return;
+      // キー名にタイムスタンプを含むので文字列ソートで時系列順になる
+      autoKeys.sort();
+      const toRemove = autoKeys.slice(0, autoKeys.length - AUTO_LOG_MAX_STORED);
+      await chrome.storage.local.remove(toRemove);
+      logPanel(
+        "info",
+        `[AutoLog] 古いキー ${toRemove.length} 件削除（保持上限 ${AUTO_LOG_MAX_STORED}）`,
+      );
+    } catch (e) {
+      logPanel(
+        "warn",
+        `[AutoLog] 古いキー削除失敗: ${e && e.message ? e.message : e}`,
+      );
+    }
+  },
+
+  stop(saved) {
+    if (!this.running) return;
+    this.running = false;
+    if (this.delayedStartTimer) {
+      clearTimeout(this.delayedStartTimer);
+      this.delayedStartTimer = null;
+    }
+    if (this.observer) {
+      this.observer.disconnect();
+      this.observer = null;
+    }
+    this.events = [];
+    if (saved) {
+      logPanel("info", "[AutoLog] 自動採取終了（エラー時保存済み）");
+    } else {
+      logPanel("info", "[AutoLog] 自動採取終了（保存なし）");
+    }
   },
 };
 
