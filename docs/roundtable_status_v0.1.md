@@ -113,6 +113,13 @@ Chrome拡張の骨格を作成し、ChromeにLoad unpackedで読み込むと、�
 - リスク: claude.ai の DOM 構造変更（Retry ボタンの aria-label 変更や階層変化）で破綻する可能性
 - 対応案: 将来 claude.ai に `data-testid="assistant-message"` 等が追加された場合の自動切替は既に対応済み（戦略 1, 2 が先に評価される）。Phase 2 では DOM 構造変更検知ロジックを追加
 
+### 4. ツール使用 UI が応答テキストに混入（2026-05-16 発見、Phase 2 スコープ外）
+- 現象: Claude が Skill / Tool use を行う応答（素数判定アルゴリズム生成など）で、応答コンテナの innerText に UI ボタンのラベルが混入
+- 例: `"ファイルを作成しました, コマンドを実行しました\nファイルを作成しました, コマンドを実行しました"`
+- 原因: Claude のツール使用 UI（"Presented file" 表示等）が応答ブロック内に DOM ノードとして存在し、innerText に取り込まれる
+- 対応案: 応答ブロック内の特定要素（button / 特定 aria-label）を抽出時にスキップ。Phase 3 以降で対応（ChatGPT の Canvas / Gemini の "Show thinking" と統合的に扱う方が筋が良い）
+- 影響範囲: ツール使用しない通常応答（議論や説明）には影響なし
+
 ---
 
 ## 重要な設計判断（仕様書から抜粋）
@@ -231,6 +238,28 @@ Chrome拡張の骨格を作成し、ChromeにLoad unpackedで読み込むと、�
 
 → Phase 3 で ChatGPT / Gemini の aria-live を観察する際、末尾マーカー
 の種類（言語・UI 別に異なる可能性）を最初にチェックすべき。
+
+#### 2026-05-16: A3 実装完了
+- コミット: 7f0f850
+- 動作確認:
+  - 短文「こんにちは」30 秒設定: 通常動作、無音タイムアウト不発
+  - バリデーション: 0/-5 → エラー、3 → 警告付き保存、700 → 警告付き保存
+  - 5 秒設定で短文: 誤発火なし
+  - 1 秒設定で長文: 期待通り `⚠ 無音タイムアウト (1秒 活動なし)` 発火
+
+**実装内容**:
+- 設定 UI（折りたたみ式 `<details>`）をサイドパネルに追加
+- 無音タイムアウトを `chrome.storage.local` に永続化、送信時に毎回 content_script へ配送
+- バリデーション: 数値以外/0以下はエラー、5秒未満/600秒超は警告付き保存
+- `waitForResponseComplete()` に無音判定組込（テキスト変化 + Thinking バッジで `lastActivityAt` 更新）
+- バックストップ 120秒 → 600秒に緩和（仕様書§10 の精神に沿わせる）
+- Thinking バッジ候補配列方式（aria-label / data-testid 6 パターン）
+
+**Thinking バッジの状況**:
+extended thinking 系の質問（素数判定）でも検出ログが出なかった。
+検知ロジック自体は動作（`Thinking 0回` がログに出る）。claude.ai が
+今回の応答で Thinking バッジを表示しなかった可能性が高い。
+Phase 3 の英語 UI 採取時に DOM ロガーを並行して回して確定する方針。
 
 ---
 
