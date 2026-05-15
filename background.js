@@ -139,7 +139,7 @@ async function sendToClaudeTab(tabId, msg) {
   }
 }
 
-async function handleSendToClaude(text, tabId) {
+async function handleSendToClaude(text, tabId, settings) {
   const r = await resolveTab(tabId);
   if (r.error) {
     logToPanel("error", r.error);
@@ -151,6 +151,7 @@ async function handleSendToClaude(text, tabId) {
     const response = await sendToClaudeTab(tab.id, {
       type: "send_to_claude",
       text,
+      settings: settings || {},
     });
     return (
       response || { ok: false, error: "content_script が応答を返しませんでした。" }
@@ -282,7 +283,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "send_to_claude") {
-    handleSendToClaude(msg.text, msg.tabId).then(sendResponse);
+    handleSendToClaude(msg.text, msg.tabId, msg.settings).then(sendResponse);
     return true;
   }
 

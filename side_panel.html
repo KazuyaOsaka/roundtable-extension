@@ -237,6 +237,57 @@
         font-size: 11px;
         color: var(--muted);
       }
+      .settings {
+        font-size: 11.5px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .settings > summary {
+        cursor: pointer;
+        padding: 6px 10px;
+        color: var(--muted);
+        user-select: none;
+      }
+      .settings[open] > summary {
+        border-bottom: 1px solid var(--border);
+      }
+      .settings-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 10px 4px 10px;
+        flex-wrap: wrap;
+      }
+      .settings-row label {
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .settings-row input[type="number"] {
+        width: 70px;
+        padding: 4px 6px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 11.5px;
+        font-family: inherit;
+      }
+      .settings-row button {
+        padding: 4px 10px;
+        font-size: 11px;
+      }
+      .settings-status {
+        font-size: 11px;
+        flex-basis: 100%;
+        min-height: 14px;
+      }
+      .settings-status.error { color: var(--error); font-weight: 600; }
+      .settings-status.warn { color: var(--warn); }
+      .settings-status.ok { color: var(--ok); }
+      .settings-help {
+        padding: 0 10px 8px 10px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.4;
+      }
     </style>
   </head>
   <body>
@@ -261,6 +312,19 @@
           再読込
         </button>
       </div>
+      <details class="settings">
+        <summary>⚙️ 設定</summary>
+        <div class="settings-row">
+          <label for="silence-timeout">無音タイムアウト:</label>
+          <input id="silence-timeout" type="number" min="1" step="1" value="30" />
+          <span>秒</span>
+          <button id="save-settings" type="button">保存</button>
+          <div id="settings-status" class="settings-status"></div>
+        </div>
+        <div class="settings-help">
+          応答中の AI が活動を完全停止したと判定するまでの時間。テキスト変化または Thinking バッジ表示中はリセットされます。デフォルト 30 秒。
+        </div>
+      </details>
       <div class="log-header">
         <span>ログ</span>
         <button id="clear-log" class="clear-btn" type="button">クリア</button>

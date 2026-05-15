@@ -18,8 +18,17 @@ const $ping = document.getElementById("ping");
 const $tabSelect = document.getElementById("tab-select");
 const $reloadTabs = document.getElementById("reload-tabs");
 const $useCurrentTab = document.getElementById("use-current-tab");
+const $silenceTimeout = document.getElementById("silence-timeout");
+const $saveSettings = document.getElementById("save-settings");
+const $settingsStatus = document.getElementById("settings-status");
 
 const NO_TAB_VALUE = "__none__";
+
+// Phase 2 A3: 無音タイムアウト設定。chrome.storage.local に永続化、
+// 送信時に毎回 content_script へ渡す。
+const SETTINGS_KEY = "roundtable_settings";
+const DEFAULT_SILENCE_TIMEOUT_SEC = 30;
+let cachedSilenceTimeoutSec = DEFAULT_SILENCE_TIMEOUT_SEC;
 
 const LEVEL_PREFIX = {
   info: "•",
@@ -444,6 +453,7 @@ $send.addEventListener("click", async () => {
       type: "send_to_claude",
       tabId,
       text,
+      settings: { silence_timeout_sec: cachedSilenceTimeoutSec },
     });
     if (response && response.ok) {
       logOk(
@@ -488,8 +498,86 @@ $send.addEventListener("click", async () => {
   }
 });
 
+// Phase 2 A3: 設定の読み込み・保存・バリデーション
+function setSettingsStatus(level, msg) {
+  $settingsStatus.className = `settings-status ${level}`;
+  $settingsStatus.textContent = msg;
+}
+
+function validateSilenceTimeout(raw) {
+  // raw: input.value (string)
+  const trimmed = (raw || "").trim();
+  if (trimmed === "") {
+    return { error: `数値を入力してください (input="")` };
+  }
+  const n = Number(trimmed);
+  if (!isFinite(n) || !Number.isInteger(n)) {
+    return { error: `数値を入力してください (input="${trimmed}")` };
+  }
+  if (n < 1) {
+    return { error: `1 秒以上を指定してください (input="${trimmed}")` };
+  }
+  const warnings = [];
+  if (n > 600) {
+    warnings.push("600 秒（A3 のバックストップ）以下を推奨します");
+  } else if (n < 5) {
+    warnings.push("5 秒未満は誤発火リスクが高いです");
+  }
+  return { value: n, warnings };
+}
+
+async function loadSettings() {
+  try {
+    const result = await chrome.storage.local.get(SETTINGS_KEY);
+    const stored = result[SETTINGS_KEY] || {};
+    if (
+      typeof stored.silence_timeout_sec === "number" &&
+      Number.isInteger(stored.silence_timeout_sec) &&
+      stored.silence_timeout_sec >= 1
+    ) {
+      cachedSilenceTimeoutSec = stored.silence_timeout_sec;
+    } else {
+      cachedSilenceTimeoutSec = DEFAULT_SILENCE_TIMEOUT_SEC;
+    }
+    $silenceTimeout.value = String(cachedSilenceTimeoutSec);
+  } catch (e) {
+    logWarn(`設定読み込み失敗: ${e && e.message ? e.message : e}（デフォルト ${DEFAULT_SILENCE_TIMEOUT_SEC} 秒を使用）`);
+    cachedSilenceTimeoutSec = DEFAULT_SILENCE_TIMEOUT_SEC;
+    $silenceTimeout.value = String(cachedSilenceTimeoutSec);
+  }
+}
+
+async function saveSettings() {
+  const raw = $silenceTimeout.value;
+  const v = validateSilenceTimeout(raw);
+  if (v.error) {
+    setSettingsStatus("error", `✗ ${v.error}`);
+    logWarn(`設定保存失敗: 無音タイムアウト値が不正 (input="${raw}") — ${v.error}`);
+    return;
+  }
+  try {
+    await chrome.storage.local.set({
+      [SETTINGS_KEY]: { silence_timeout_sec: v.value },
+    });
+    cachedSilenceTimeoutSec = v.value;
+    if (v.warnings && v.warnings.length > 0) {
+      setSettingsStatus("warn", `⚠ 保存しました (${v.value}秒): ${v.warnings.join(", ")}`);
+      logWarn(`設定保存: 無音タイムアウト = ${v.value} 秒（${v.warnings.join(", ")}）`);
+    } else {
+      setSettingsStatus("ok", `✓ 保存しました (${v.value}秒)`);
+      logOk(`設定保存: 無音タイムアウト = ${v.value} 秒`);
+    }
+  } catch (e) {
+    setSettingsStatus("error", `✗ 保存失敗: ${e && e.message ? e.message : e}`);
+    logError(`設定保存失敗（storage エラー）: ${e && e.message ? e.message : e}`);
+  }
+}
+
+$saveSettings.addEventListener("click", saveSettings);
+
 logInfo(
   "サイドパネル起動。現在のアクティブタブが claude.ai なら自動で送信先に設定されます。",
 );
+loadSettings();
 // 起動時は「現在のウィンドウのアクティブタブ」を優先して選択する。
 refreshTabs({ selectCurrentActive: true });

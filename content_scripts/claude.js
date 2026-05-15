@@ -248,7 +248,48 @@ function findStopButton() {
   return null;
 }
 
-async function waitForResponseComplete(timeoutMs = 120000) {
+// Phase 2 A3: Thinking バッジ候補。
+// Claude の extended thinking 中に表示される要素の aria-label / data-testid を
+// 既知パターンとして並べる。1 つも当たらない場合は Phase 3 で DOM ロガー再採取して確定。
+// Thinking 検知は無音タイムアウトの「補助機能」: テキスト変化検知が主で、
+// テキスト変化が無い長考のみを救う役割。取れなくても致命的ではない。
+const THINKING_INDICATOR_SELECTORS = [
+  '[aria-label*="思考"]',
+  '[aria-label*="考え"]',
+  '[aria-label*="Thinking"]',
+  '[aria-label*="Reasoning"]',
+  '[data-testid*="thinking"]',
+  '[data-testid*="reasoning"]',
+];
+
+function findThinkingIndicator() {
+  for (const sel of THINKING_INDICATOR_SELECTORS) {
+    const el = document.querySelector(sel);
+    if (el) return { element: el, selector: sel };
+  }
+  return null;
+}
+
+// Phase 2 A3:
+//   - settings.silence_timeout_sec: 無音タイムアウト（秒）。デフォルト 30 秒
+//   - settings.backstop_timeout_ms: 真の最大時間（仕様書§10 の精神から外れるが
+//     最終バックストップとして残す）。デフォルト 600,000ms = 10 分
+//   仕様書§10 は「単純な時間タイムアウトはかけない、無音タイムアウト方式」を明記。
+//   実装上は (a) 無音タイムアウト = 一次防衛、(b) バックストップ = 異常時の安全弁
+//   の二段構えとする。
+async function waitForResponseComplete(settings = {}) {
+  const silenceTimeoutSec =
+    typeof settings.silence_timeout_sec === "number" &&
+    settings.silence_timeout_sec >= 1
+      ? settings.silence_timeout_sec
+      : 30;
+  const SILENCE_TIMEOUT_MS = silenceTimeoutSec * 1000;
+  const BACKSTOP_TIMEOUT_MS =
+    typeof settings.backstop_timeout_ms === "number" &&
+    settings.backstop_timeout_ms >= SILENCE_TIMEOUT_MS
+      ? settings.backstop_timeout_ms
+      : 600000;
+
   // 1) 停止ボタン出現を待つ（送信→応答開始）
   const appearStart = Date.now();
   let firstHit = null;
@@ -263,22 +304,74 @@ async function waitForResponseComplete(timeoutMs = 120000) {
     await sleep(150);
   }
   logPanel("info", `停止ボタン出現 → 応答中 (selector=${firstHit.selector})`);
+  logPanel(
+    "info",
+    `無音タイムアウト=${silenceTimeoutSec}秒、バックストップ=${Math.round(BACKSTOP_TIMEOUT_MS / 1000)}秒`,
+  );
 
-  // 2) 停止ボタン消滅を待つ（応答完了）
+  // 2) 停止ボタン消滅を待つ + 無音タイムアウト判定（A3）
+  //    各ポーリングで以下を観察し、活動があれば lastActivityAt を更新:
+  //    - 抽出対象テキストの変化
+  //    - Thinking バッジの表示
+  //    無音 = 上記いずれも無いまま SILENCE_TIMEOUT_MS 経過。
   const startWait = Date.now();
   let lastHeartbeat = startWait;
+  let lastActivityAt = startWait;
+  let lastObservedText = extractLatestAssistantMessage().text || "";
+  let lastThinkingLogAt = 0;
+  let thinkingHitCount = 0;
   while (findStopButton()) {
-    const elapsed = Date.now() - startWait;
-    if (elapsed > timeoutMs) {
+    const now = Date.now();
+    const elapsed = now - startWait;
+
+    // バックストップ（真の最大時間）
+    if (elapsed > BACKSTOP_TIMEOUT_MS) {
       return {
         ok: false,
-        error: `応答完了タイムアウト (${timeoutMs}ms 経過)`,
+        error: `応答完了タイムアウト（バックストップ ${Math.round(BACKSTOP_TIMEOUT_MS / 1000)}秒 経過）`,
+        backstop: true,
       };
     }
+
+    // テキスト変化検知
+    const curText = extractLatestAssistantMessage().text || "";
+    if (curText !== lastObservedText) {
+      lastObservedText = curText;
+      lastActivityAt = now;
+    }
+
+    // Thinking バッジ検知（テキスト変化が無い長考を救う補助）
+    const thinking = findThinkingIndicator();
+    if (thinking) {
+      lastActivityAt = now;
+      thinkingHitCount++;
+      if (now - lastThinkingLogAt >= 10000) {
+        lastThinkingLogAt = now;
+        logPanel(
+          "info",
+          `Thinking バッジ検出 (selector=${thinking.selector})、無音タイムアウトをリセット`,
+        );
+      }
+    }
+
+    // 無音タイムアウト判定（A3 一次防衛）
+    const silenceMs = now - lastActivityAt;
+    if (silenceMs > SILENCE_TIMEOUT_MS) {
+      return {
+        ok: false,
+        error: `無音タイムアウト (${silenceTimeoutSec}秒 活動なし)。再試行 / スキップ / 中断を選んでください。`,
+        silenceTimeout: true,
+        thinkingHitCount,
+      };
+    }
+
     // 10秒ごとに進捗ログ
-    if (Date.now() - lastHeartbeat >= 10000) {
-      lastHeartbeat = Date.now();
-      logPanel("info", `応答中... ${Math.round(elapsed / 1000)}秒経過`);
+    if (now - lastHeartbeat >= 10000) {
+      lastHeartbeat = now;
+      logPanel(
+        "info",
+        `応答中... ${Math.round(elapsed / 1000)}秒経過 (無音 ${Math.round(silenceMs / 1000)}秒, Thinking ${thinkingHitCount}回)`,
+      );
     }
     await sleep(300);
   }
@@ -286,15 +379,8 @@ async function waitForResponseComplete(timeoutMs = 120000) {
   // 3) 消滅の安定化（瞬間的な再出現の保険）
   await sleep(500);
   if (findStopButton()) {
-    const remaining = timeoutMs - (Date.now() - startWait);
-    if (remaining <= 0) {
-      return {
-        ok: false,
-        error: `応答完了タイムアウト（再出現後の残時間なし）`,
-      };
-    }
     logPanel("warn", "停止ボタンが再出現。応答継続として待機を再開。");
-    return await waitForResponseComplete(remaining);
+    return await waitForResponseComplete(settings);
   }
   logPanel("info", "停止ボタン消滅 → テキスト安定化を確認中...");
 
@@ -735,7 +821,7 @@ function snapshotAssistantCandidates() {
   };
 }
 
-async function performSend(text) {
+async function performSend(text, settings = {}) {
   if (!text || !text.trim()) {
     return { ok: false, error: "本文が空です。" };
   }
@@ -848,7 +934,7 @@ async function performSend(text) {
 
   // 7. 応答完了待機
   logPanel("info", "応答完了を待機中...");
-  const waitResult = await waitForResponseComplete();
+  const waitResult = await waitForResponseComplete(settings);
   if (!waitResult.ok) {
     logPanel("warn", waitResult.error);
     return { ...baseResult, responseError: waitResult.error };
@@ -1195,7 +1281,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return false;
   }
   if (msg.type === "send_to_claude") {
-    performSend(msg.text || "")
+    performSend(msg.text || "", msg.settings || {})
       .then(sendResponse)
       .catch((e) => {
         const m = `想定外エラー: ${e && e.stack ? e.stack : e}`;
