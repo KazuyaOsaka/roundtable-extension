@@ -346,11 +346,19 @@ const ASSISTANT_TEXT_SUFFIX_PATTERNS = [
   /\n\s*(Retry|再試行|Regenerate|再生成|Copy|コピー|Edit|編集|Give positive feedback|Give negative feedback|高評価|低評価|Bad response|Good response)\s*$/,
 ];
 
-// Phase 2 A1+C1: 戻り値を { text, dedup } 形式に変更。
+// Phase 2 A1+C1: 戻り値を { text, dedup, diagnostic } 形式に変更。
 //   dedup が null なら重複検出は不発、オブジェクトなら発火。
+//   diagnostic は不発時に長い段落が複数あった場合のみ非 null。
 //   呼出側で発火状況をログ出力するために構造化情報を返す。
+//
+// Phase 2 A2+C3 fix:
+//   - 比較専用の正規化（zero-width 文字除去）を追加
+//   - 末尾マーカー（…/句読点/閉じカッコ等）を剥がしたうえで prefix 比較
+//     → aria-live の途中スナップショットが「…」等の末尾マーカーで終わる
+//        ケースを捕捉する
+//   - 出力本文 (kept) はマーカー除去前のオリジナルを採用するので破壊なし
 function cleanAssistantText(raw) {
-  if (!raw) return { text: "", dedup: null };
+  if (!raw) return { text: "", dedup: null, diagnostic: null };
   let text = raw.trim();
 
   // プレフィックス除去
@@ -359,32 +367,53 @@ function cleanAssistantText(raw) {
   }
 
   // 重複検出: aria-live が同じ本文を二重 render しているケース
-  // Phase 2: 完全一致に加え、prefix 一致（途中版 + 完全版）も検出する
+  // Phase 2: 完全一致 + prefix 一致 + 末尾マーカー除去後の prefix 一致を検出
   let dedup = null;
+  let diagnostic = null;
   const parts = text
     .split(/\n\n+/)
     .map((s) => s.trim())
     .filter(Boolean);
   if (parts.length >= 2) {
-    const norm0 = parts[0].replace(/\s+/g, " ");
-    const norm1 = parts[1].replace(/\s+/g, " ");
+    const norm0 = normalizeForCompare(parts[0]);
+    const norm1 = normalizeForCompare(parts[1]);
     let keepIdx = null; // 0 or 1: 採用する段落の index
     let dedupKind = null;
     let prefixIdx = null; // 0 or 1: prefix だった段落の index（prefix のみ）
+
     if (norm0 === norm1) {
       keepIdx = 0;
       dedupKind = "exact";
     } else if (norm1.startsWith(norm0)) {
-      // parts[0] が parts[1] の prefix → 長い parts[1] を採用
       keepIdx = 1;
       dedupKind = "prefix";
       prefixIdx = 0;
     } else if (norm0.startsWith(norm1)) {
-      // parts[1] が parts[0] の prefix → 長い parts[0] を採用
       keepIdx = 0;
       dedupKind = "prefix";
       prefixIdx = 1;
+    } else {
+      // 末尾マーカーを剥がして再比較。
+      // 「途中版に末尾「…」が付き、完全版にはそれが無い」ケースを救う。
+      const trim0 = trimTrailingDedupMarkers(norm0);
+      const trim1 = trimTrailingDedupMarkers(norm1);
+      if (trim0.length > 0 && trim1.length > 0) {
+        if (trim0 === trim1) {
+          // 末尾マーカーが違うだけ → 長い方（より完成形）を採用
+          keepIdx = norm0.length >= norm1.length ? 0 : 1;
+          dedupKind = "exact";
+        } else if (norm1.startsWith(trim0)) {
+          keepIdx = 1;
+          dedupKind = "prefix";
+          prefixIdx = 0;
+        } else if (norm0.startsWith(trim1)) {
+          keepIdx = 0;
+          dedupKind = "prefix";
+          prefixIdx = 1;
+        }
+      }
     }
+
     if (keepIdx !== null) {
       const kept = parts[keepIdx];
       const dropped = parts[keepIdx === 0 ? 1 : 0];
@@ -396,6 +425,13 @@ function cleanAssistantText(raw) {
         prefix_idx: prefixIdx,
         kept_length: kept.length,
         dropped_length: dropped.length,
+      };
+    } else if (parts[0].length >= 30 && parts[1].length >= 30) {
+      // Y 不発だが両方が substantial → 取り損ねパターン解析用に診断情報
+      diagnostic = {
+        num_parts: parts.length,
+        part_lengths: parts.slice(0, 4).map((p) => p.length),
+        part_heads: parts.slice(0, 2).map((p) => p.slice(0, 60)),
       };
     }
   }
@@ -413,7 +449,27 @@ function cleanAssistantText(raw) {
     }
   }
 
-  return { text: text.trim(), dedup };
+  return { text: text.trim(), dedup, diagnostic };
+}
+
+// Phase 2 A2+C3 fix: 比較専用の正規化ヘルパ。出力本文には影響しない。
+//   - zero-width 文字 (U+200B〜U+200D, U+FEFF) を除去
+//   - whitespace を 1 個のスペースに圧縮
+function normalizeForCompare(s) {
+  return s
+    .replace(/[​-‍﻿]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Phase 2 A2+C3 fix: 末尾マーカーを剥がす（比較専用）。
+//   aria-live の途中スナップショットは文の途中で止まるため、末尾に
+//   「…」「...」「。」「、」「！」「？」「．」「」」「』」「）」「)」「"」「'」、
+//   ホワイトスペースが付くケースが多い。これらを剥がして prefix 比較する。
+//   出力本文 (kept) には影響しないので過剰削除のリスクは無い。
+const TRAILING_DEDUP_TRIM_RE = /[…。．、！？\.\s」』）)"'…]+$/u;
+function trimTrailingDedupMarkers(s) {
+  return s.replace(TRAILING_DEDUP_TRIM_RE, "");
 }
 
 const ASSISTANT_RETRY_LABELS = ["Retry", "再試行", "Regenerate", "再生成"];
@@ -449,13 +505,14 @@ function extractLatestAssistantMessage() {
   if (byTestid.length > 0) {
     const last = byTestid[byTestid.length - 1];
     const raw = last.innerText || "";
-    const { text, dedup } = cleanAssistantText(raw);
+    const { text, dedup, diagnostic } = cleanAssistantText(raw);
     if (text) {
       return {
         text,
         selector: '[data-testid="assistant-message"]',
         raw_length: raw.length,
         dedup,
+        diagnostic,
         extractionMeta: meta,
       };
     }
@@ -468,13 +525,14 @@ function extractLatestAssistantMessage() {
   if (byAuthor.length > 0) {
     const last = byAuthor[byAuthor.length - 1];
     const raw = last.innerText || "";
-    const { text, dedup } = cleanAssistantText(raw);
+    const { text, dedup, diagnostic } = cleanAssistantText(raw);
     if (text) {
       return {
         text,
         selector: '[data-message-author-role="assistant"]',
         raw_length: raw.length,
         dedup,
+        diagnostic,
         extractionMeta: meta,
       };
     }
@@ -497,7 +555,7 @@ function extractLatestAssistantMessage() {
           continue;
         }
         const raw = cur.innerText || "";
-        const { text, dedup } = cleanAssistantText(raw);
+        const { text, dedup, diagnostic } = cleanAssistantText(raw);
         if (text.length >= 1 && cur.contains(lastRetry)) {
           meta.retry_ancestor_depth = depth;
           return {
@@ -505,6 +563,7 @@ function extractLatestAssistantMessage() {
             selector: `fallback:retry-ancestor-depth-${depth}`,
             raw_length: raw.length,
             dedup,
+            diagnostic,
             extractionMeta: meta,
           };
         }
@@ -526,13 +585,14 @@ function extractLatestAssistantMessage() {
     while (node) {
       if (!node.querySelector('[data-testid="user-message"]')) {
         const raw = node.innerText || "";
-        const { text, dedup } = cleanAssistantText(raw);
+        const { text, dedup, diagnostic } = cleanAssistantText(raw);
         if (text.length >= 1) {
           return {
             text,
             selector: "fallback:after-last-user-message",
             raw_length: raw.length,
             dedup,
+            diagnostic,
             extractionMeta: meta,
           };
         }
@@ -546,6 +606,7 @@ function extractLatestAssistantMessage() {
     selector: null,
     raw_length: 0,
     dedup: null,
+    diagnostic: null,
     extractionMeta: meta,
   };
 }
@@ -848,6 +909,23 @@ async function performSend(text) {
     }
   } else {
     logPanel("info", "prefix 重複検出: 発火せず");
+    // Phase 2 A2+C3 fix: 診断ログ。Y 不発だが長い段落が複数あった場合は
+    // raw text の頭を出して、取り損ねパターンの解析材料にする。
+    if (extracted.diagnostic) {
+      const diag = extracted.diagnostic;
+      logPanel(
+        "info",
+        `[診断] 段落 ${diag.num_parts} 個、長さ [${diag.part_lengths.join(", ")}]字`,
+      );
+      logPanel(
+        "info",
+        `[診断] 段落1 head: "${diag.part_heads[0]}..."`,
+      );
+      logPanel(
+        "info",
+        `[診断] 段落2 head: "${diag.part_heads[1]}..."`,
+      );
+    }
   }
 
   // Phase 2 C3: 脆弱性検知の警告判定 (W1〜W4)。
@@ -871,11 +949,13 @@ async function performSend(text) {
     );
   }
 
-  // W2: 戦略 3 の depth >= 5 → 階層変化の兆候 (warn)
+  // W2: 戦略 3 の depth >= 7 → 階層変化の兆候 (warn)
+  // 2026-05-15 検証で「現状 depth=5 が常態」と判明。それより 2 段深い
+  // ケースを「DOM 階層が変わった可能性」として警告する閾値とする。
   if (
     sel.startsWith("fallback:retry-ancestor-depth-") &&
     meta.retry_ancestor_depth !== null &&
-    meta.retry_ancestor_depth >= 5
+    meta.retry_ancestor_depth >= 7
   ) {
     firedWarnings.push("W2");
     logPanel(
