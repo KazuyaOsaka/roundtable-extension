@@ -261,6 +261,38 @@ extended thinking 系の質問（素数判定）でも検出ログが出なか�
 今回の応答で Thinking バッジを表示しなかった可能性が高い。
 Phase 3 の英語 UI 採取時に DOM ロガーを並行して回して確定する方針。
 
+#### 2026-05-16: A4 実装完了
+- コミット: a2043d5 (初版) → 7d5cd0f (busy-state fix)
+- 動作確認:
+  - タグ付きログ動作、`[AutoLog]` で start/save/stop が観測可能
+  - 1 秒設定で長文 → `silence_timeout` の自動採取保存成功、`📂 最新自動ログ` で JSON 表示
+  - busy-state fix: 1 秒設定で失敗 → 即再送 → preflight でデッドロック完全阻止
+
+**実装内容（A4 初版）**:
+- AutoDomLogger 実装（応答セッション中のリングバッファ 60 秒、上限 2000 イベント）
+- 1000ms 遅延起動でノイズ回避、保存時に古いキー自動削除（保持上限 10）
+- 4 トリガー: `stop_button_no_appear` / `silence_timeout` / `extract_failed` / `warn_w3` / `warn_w4`
+- 53 個の logPanel 呼び出しにタグ付け（[Wait] [A1] [A3] [Extract] [C1] [C3:W*] [Send] [Inject] [Submit] [CF] [DOM] [AutoLog]）
+- サイドパネルに `📂 最新自動ログ` ボタン追加、既存ボタンを「手動」「自動」で命名整理
+- コーディング規約: Phase 3 以降は最初からタグ付きで書く（本ドキュメントに明記）
+
+**A4 fix の経緯**:
+A4 テスト中に応答中の二重送信問題を発見。1 秒タイムアウト失敗後の即再送で
+`findSubmitFallback` が停止ボタンを SVG button として誤クリック →
+Claude の応答が中断、入力欄も触られず、お互い待機状態でデッドロック。
+
+修正:
+- `performSend()` 冒頭に応答中チェック（preflight）を追加、`{ busy: true }` で即時 reject
+- `findSubmitFallback()` で停止ボタン aria-label を含むものを skip
+- `STOP_BUTTON_ARIA_LABELS` を切り出し、`STOP_BUTTON_SELECTORS` を `.map()` で派生（DRY）
+- side_panel.js で `response.busy` は logWarn 経由（Cloudflare 検知と同等の扱い）
+
+**重要な発見**:
+Kazuya 環境ではサイドパネルの送信ボタンが応答中は disabled になっており、
+A4 fix の preflight は「UI 側 disabled + content_script 側 preflight」の
+二重防御として機能する。将来 UI バグで disabled が解除されても、
+デッドロックは発生しない設計に到達。
+
 ---
 
 ## コーディング規約（運用ルール）
