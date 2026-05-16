@@ -288,6 +288,116 @@
         font-size: 11px;
         line-height: 1.4;
       }
+      /* Phase 2 E: 連続テストモード */
+      .test-mode {
+        font-size: 11.5px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .test-mode > summary {
+        cursor: pointer;
+        padding: 6px 10px;
+        color: var(--muted);
+        user-select: none;
+      }
+      .test-mode[open] > summary {
+        border-bottom: 1px solid var(--border);
+      }
+      .test-mode-body {
+        padding: 8px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .test-mode-body textarea {
+        width: 100%;
+        min-height: 110px;
+        max-height: 220px;
+        font-family: inherit;
+        font-size: 11.5px;
+        resize: vertical;
+        padding: 6px 8px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+      }
+      .test-config-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        color: var(--muted);
+      }
+      .test-config-row label { white-space: nowrap; }
+      .test-config-row input[type="number"] {
+        width: 56px;
+        padding: 3px 5px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 11.5px;
+      }
+      .test-button-row { display: flex; gap: 6px; }
+      .test-button-row button { padding: 5px 12px; font-size: 11.5px; }
+      .test-progress {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .test-progress-bar {
+        flex: 1;
+        height: 6px;
+        background: var(--log-bg);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .test-progress-fill {
+        height: 100%;
+        background: var(--accent);
+        width: 0%;
+        transition: width 0.3s;
+      }
+      .test-results {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        max-height: 240px;
+        overflow-y: auto;
+      }
+      .test-result-row {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+      }
+      .test-result-row > summary {
+        cursor: pointer;
+        padding: 4px 8px;
+        display: grid;
+        grid-template-columns: 24px 70px 50px 1fr;
+        gap: 8px;
+        align-items: center;
+        list-style: none;
+      }
+      .test-result-row > summary::-webkit-details-marker { display: none; }
+      .test-result-row.ok > summary { background: #f0fdf4; }
+      .test-result-row.fail > summary { background: #fef2f2; color: var(--error); }
+      .test-result-row .detail {
+        padding: 6px 10px;
+        border-top: 1px solid var(--border);
+        background: var(--log-bg);
+        font-size: 10.5px;
+        line-height: 1.5;
+        word-break: break-all;
+      }
+      .test-summary {
+        padding: 6px 10px;
+        background: var(--log-bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 11.5px;
+      }
+      .test-summary.empty { display: none; }
     </style>
   </head>
   <body>
@@ -336,6 +446,38 @@
           placeholder="claude.ai に送るメッセージ（例: こんにちは）"
           spellcheck="false"
         ></textarea>
+        <details class="test-mode">
+          <summary>⏱ Phase 2 連続テスト</summary>
+          <div class="test-mode-body">
+            <label for="test-messages" style="color: var(--muted)">メッセージ（1 行 1 個）:</label>
+            <textarea
+              id="test-messages"
+              spellcheck="false"
+              placeholder="1 行に 1 つメッセージを書く"
+            ></textarea>
+            <div class="test-config-row">
+              <label>試行回数:</label>
+              <input id="test-count" type="number" min="1" max="100" value="10" />
+              <label>間隔:</label>
+              <input id="test-interval-min" type="number" min="1" value="5" />
+              <span>秒 〜</span>
+              <input id="test-interval-max" type="number" min="1" value="15" />
+              <span>秒</span>
+            </div>
+            <div class="test-button-row">
+              <button id="test-start" type="button">▶ 開始</button>
+              <button id="test-abort" type="button" disabled>⏹ 中断</button>
+            </div>
+            <div id="test-progress" class="test-progress" hidden>
+              <span id="test-progress-text">0/0</span>
+              <div class="test-progress-bar">
+                <div id="test-progress-fill" class="test-progress-fill"></div>
+              </div>
+            </div>
+            <div id="test-results" class="test-results"></div>
+            <div id="test-summary" class="test-summary empty"></div>
+          </div>
+        </details>
         <div class="button-row logger-row">
           <button
             id="dom-logger"
