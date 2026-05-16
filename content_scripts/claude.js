@@ -109,9 +109,16 @@ function findSubmitFallback() {
   for (let depth = 0; depth < 6 && container; depth++) {
     const buttons = container.querySelectorAll('button[type="button"]');
     for (const btn of buttons) {
-      if (btn.querySelector("svg")) {
-        return { element: btn, selector: "fallback:nearest-button-with-svg" };
+      if (!btn.querySelector("svg")) continue;
+      // Phase 2 A4 fix: 停止ボタンを誤クリックしないよう、aria-label に停止系
+      // 文字列を含むボタンはスキップ。応答中フェーズでは「送信ボタン」が
+      // 消滅して「応答を停止」が同じ位置・同じ構造で表示されるため、
+      // 単純な SVG ボタン探索だと停止ボタンを誤取得してしまう。
+      const ariaLabel = btn.getAttribute("aria-label") || "";
+      if (STOP_BUTTON_ARIA_LABELS.some((l) => ariaLabel.includes(l))) {
+        continue;
       }
+      return { element: btn, selector: "fallback:nearest-button-with-svg" };
     }
     container = container.parentElement;
   }
@@ -233,12 +240,18 @@ async function clickSubmit(button) {
 // Phase 2 A2: 停止ボタンの aria-label を配列化。
 // 日本語版 ('応答を停止') は Phase 1 で実機確認済み。英語版の正確な値は
 // 未確定のため候補を複数並べる。Phase 3 で英語 UI を DOM ロガーで採取して確定。
-const STOP_BUTTON_SELECTORS = [
-  'button[aria-label="応答を停止"]',
-  'button[aria-label="Stop response"]',
-  'button[aria-label="Stop"]',
-  'button[aria-label="停止"]',
+//
+// Phase 2 A4 fix: ラベル配列と selector 配列を分離 (DRY)。
+// findSubmitFallback の安全装置（停止ボタン誤検出回避）でラベル側を再利用する。
+const STOP_BUTTON_ARIA_LABELS = [
+  "応答を停止",
+  "Stop response",
+  "Stop",
+  "停止",
 ];
+const STOP_BUTTON_SELECTORS = STOP_BUTTON_ARIA_LABELS.map(
+  (l) => `button[aria-label="${l}"]`,
+);
 
 function findStopButton() {
   for (const sel of STOP_BUTTON_SELECTORS) {
@@ -838,6 +851,19 @@ async function performSend(text, settings = {}) {
     const m = `[CF] Cloudflare検知（送信前）: ${preCf.by}。操作を中止します。`;
     logPanel("error", m);
     return { ok: false, error: m, cloudflare: true };
+  }
+
+  // 0.5 応答中チェック (busy state preflight) - Phase 2 A4 fix
+  // 停止ボタンが存在 = claude.ai が応答中 = 送信不可。
+  // この preflight を入れないと findSubmitFallback が停止ボタンを SVG button
+  // として誤クリックし、Claude の応答を途中で止めてしまうデッドロックが発生する。
+  // 直前の応答が「無音タイムアウト失敗」だが claude.ai 側ではまだ応答中
+  // というケースで顕在化した（2026-05-16 検証）。
+  const stopBtnExists = findStopButton();
+  if (stopBtnExists) {
+    const m = `claude.ai が応答中のため送信できません。応答完了を待つか、claude.ai タブで「応答を停止」を押してください。(detected: ${stopBtnExists.selector})`;
+    logPanel("warn", `[Send] ${m}`);
+    return { ok: false, error: m, busy: true };
   }
 
   // 1. 入力欄

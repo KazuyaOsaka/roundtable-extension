@@ -516,6 +516,9 @@ $send.addEventListener("click", async () => {
           });
         }
       }
+    } else if (response && response.busy) {
+      // Phase 2 A4 fix: 応答中は使用中エラー扱い（warn）。Cloudflare 検知と同じレベル。
+      logWarn(`使用中: ${response.error}`);
     } else {
       logError(
         `送信失敗: ${response && response.error ? response.error : "(原因不明)"}`,
