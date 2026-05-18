@@ -1,13 +1,54 @@
 // background.js — Roundtable のバックグラウンド Service Worker
 // ============================================================
-// 役割（Phase 1 Step 1A 時点）:
+// 役割:
 //   - ツールバーアイコンクリックでサイドパネルを開く
-//   - claude.ai タブの一覧をサイドパネルに返す（list_claude_tabs）
-//   - サイドパネル → 明示的に指定された claude.ai タブの content_script への中継
-//   - content_script が未注入のタブにはプログラム注入してから再送信する
+//   - 対象 AI（claude / chatgpt）のタブ一覧をサイドパネルに返す（list_ai_tabs）
+//   - サイドパネル → 明示的に指定された対象 AI タブの content_script への中継
+//   - content_script が未注入のタブには対象 AI 用スクリプトをプログラム注入
 //
-// 送信先タブの自動選択は廃止。送信元（サイドパネル）が tabId を必ず指定する。
+// 送信先タブの自動選択は廃止。送信元（サイドパネル）が tabId と target を
+// 必ず指定する。
+//
+// Phase 3a Step1（ルーティング一般化）:
+//   - claude 固定だったタブクエリ / URL チェック / 注入対象を AI_TARGETS で
+//     パラメータ化。claude の送信パスは完全互換（content_script へ送る
+//     メッセージ型 send_to_claude / ping / start_dom_logger は不変なので
+//     claude.js は一切変更しない＝リグレッションなし）。
+//   - メッセージ型を一般化: list_claude_tabs→list_ai_tabs、
+//     send_to_claude→send_to_ai、ping_claude→ping_ai（いずれも msg.target）。
 // ============================================================
+
+// ------------------------------------------------------------
+// 対象 AI 定義。新社追加時はここに 1 エントリ足すだけで済むようにする。
+//   - urlPrefix : resolveTab での URL 検証（startsWith）
+//   - urlMatch  : chrome.tabs.query のパターン
+//   - script    : 未注入時にプログラム注入する content_script
+//   - sendType  : content_script へ送る「送信」メッセージ型。
+//                 claude は既存 claude.js のリスナ（send_to_claude）に
+//                 合わせて不変に保つ＝claude.js を触らない。
+//                 chatgpt は Phase 3a Step4 で chatgpt.js 側に実装予定。
+// ------------------------------------------------------------
+const AI_TARGETS = {
+  claude: {
+    label: "Claude",
+    urlPrefix: "https://claude.ai/",
+    urlMatch: ["https://claude.ai/*"],
+    script: "content_scripts/claude.js",
+    sendType: "send_to_claude",
+  },
+  chatgpt: {
+    label: "ChatGPT",
+    urlPrefix: "https://chatgpt.com/",
+    urlMatch: ["https://chatgpt.com/*"],
+    script: "content_scripts/chatgpt.js",
+    sendType: "send_to_chatgpt",
+  },
+};
+const DEFAULT_TARGET = "claude";
+
+function getTargetConf(targetKey) {
+  return AI_TARGETS[targetKey] || AI_TARGETS[DEFAULT_TARGET];
+}
 
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
@@ -42,19 +83,20 @@ async function getCurrentActiveTab() {
   }
 }
 
-async function listClaudeTabs() {
-  const [claudeTabs, currentTab] = await Promise.all([
-    chrome.tabs.query({ url: ["https://claude.ai/*"] }),
+async function listAiTabs(targetKey) {
+  const conf = getTargetConf(targetKey);
+  const [aiTabs, currentTab] = await Promise.all([
+    chrome.tabs.query({ url: conf.urlMatch }),
     getCurrentActiveTab(),
   ]);
   const currentTabId = currentTab ? currentTab.id : null;
-  const currentTabIsClaude = !!(
+  const currentTabIsTarget = !!(
     currentTab &&
     currentTab.url &&
-    currentTab.url.startsWith("https://claude.ai/")
+    currentTab.url.startsWith(conf.urlPrefix)
   );
 
-  const tabs = claudeTabs
+  const tabs = aiTabs
     .map((t) => ({
       id: t.id,
       url: t.url || "",
@@ -75,14 +117,17 @@ async function listClaudeTabs() {
     });
 
   return {
+    target: targetKey || DEFAULT_TARGET,
+    targetLabel: conf.label,
     tabs,
-    currentTabId: currentTabIsClaude ? currentTabId : null,
-    currentTabIsClaude,
+    currentTabId: currentTabIsTarget ? currentTabId : null,
+    currentTabIsTarget,
     currentTabUrl: currentTab ? currentTab.url || null : null,
   };
 }
 
-async function resolveTab(tabId) {
+async function resolveTab(tabId, targetKey) {
+  const conf = getTargetConf(targetKey);
   if (typeof tabId !== "number") {
     return {
       error:
@@ -97,22 +142,24 @@ async function resolveTab(tabId) {
       error: `tabId=${tabId} のタブが見つかりません（閉じられた可能性）。「再読込」を押してタブ一覧を更新してください。`,
     };
   }
-  if (!tab.url || !tab.url.startsWith("https://claude.ai/")) {
+  if (!tab.url || !tab.url.startsWith(conf.urlPrefix)) {
     return {
-      error: `tabId=${tabId} は claude.ai のタブではありません (url=${tab.url || "?"})。`,
+      error: `tabId=${tabId} は ${conf.label} (${conf.urlPrefix}*) のタブではありません (url=${tab.url || "?"})。対象 AI とタブの組み合わせを確認してください。`,
     };
   }
   return { tab };
 }
 
-async function injectClaudeScript(tabId) {
+async function injectScript(tabId, targetKey) {
+  const conf = getTargetConf(targetKey);
   await chrome.scripting.executeScript({
     target: { tabId },
-    files: ["content_scripts/claude.js"],
+    files: [conf.script],
   });
 }
 
-async function sendToClaudeTab(tabId, msg) {
+async function sendToTab(tabId, targetKey, msg) {
+  const conf = getTargetConf(targetKey);
   try {
     return await chrome.tabs.sendMessage(tabId, msg);
   } catch (e) {
@@ -121,10 +168,10 @@ async function sendToClaudeTab(tabId, msg) {
 
     logToPanel(
       "warn",
-      `tabId=${tabId} の content_script 未注入を検出。プログラム注入を試行...`,
+      `tabId=${tabId} の content_script 未注入を検出。${conf.label} 用スクリプトをプログラム注入...`,
     );
     try {
-      await injectClaudeScript(tabId);
+      await injectScript(tabId, targetKey);
     } catch (injErr) {
       const m =
         "プログラム注入に失敗: " +
@@ -139,17 +186,18 @@ async function sendToClaudeTab(tabId, msg) {
   }
 }
 
-async function handleSendToClaude(text, tabId, settings) {
-  const r = await resolveTab(tabId);
+async function handleSendToAi(text, tabId, settings, targetKey) {
+  const conf = getTargetConf(targetKey);
+  const r = await resolveTab(tabId, targetKey);
   if (r.error) {
     logToPanel("error", r.error);
     return { ok: false, error: r.error };
   }
   const tab = r.tab;
-  logToPanel("info", `送信先 tabId=${tab.id} (${tab.url})`);
+  logToPanel("info", `[${conf.label}] 送信先 tabId=${tab.id} (${tab.url})`);
   try {
-    const response = await sendToClaudeTab(tab.id, {
-      type: "send_to_claude",
+    const response = await sendToTab(tab.id, targetKey, {
+      type: conf.sendType,
       text,
       settings: settings || {},
     });
@@ -162,48 +210,55 @@ async function handleSendToClaude(text, tabId, settings) {
   }
 }
 
-async function handlePingClaude(tabId) {
-  const r = await resolveTab(tabId);
+async function handlePingAi(tabId, targetKey) {
+  const conf = getTargetConf(targetKey);
+  const r = await resolveTab(tabId, targetKey);
   if (r.error) {
     logToPanel("error", r.error);
     return { ok: false, error: r.error };
   }
   const tab = r.tab;
-  logToPanel("info", `ping → tabId=${tab.id} (${tab.url})`);
+  logToPanel("info", `[${conf.label}] ping → tabId=${tab.id} (${tab.url})`);
   try {
-    const response = await sendToClaudeTab(tab.id, { type: "ping" });
+    const response = await sendToTab(tab.id, targetKey, { type: "ping" });
     if (response && response.ok) {
-      logToPanel("ok", `ping 応答: ${response.url}`);
+      logToPanel("ok", `[${conf.label}] ping 応答: ${response.url}`);
       return { ok: true, url: response.url };
     }
     return { ok: false, error: "ping 応答が異常" };
   } catch (e) {
     const errMsg = e && e.message ? e.message : String(e);
-    logToPanel("error", `ping 失敗: ${errMsg}`);
+    logToPanel("error", `[${conf.label}] ping 失敗: ${errMsg}`);
     return { ok: false, error: errMsg };
   }
 }
 
-async function handleStartDomLogger(tabId) {
-  const r = await resolveTab(tabId);
+async function handleStartDomLogger(tabId, targetKey) {
+  const conf = getTargetConf(targetKey);
+  const r = await resolveTab(tabId, targetKey);
   if (r.error) {
     logToPanel("error", r.error);
     return { ok: false, error: r.error };
   }
   const tab = r.tab;
-  logToPanel("info", `DOMロガー開始要求 → tabId=${tab.id} (${tab.url})`);
+  logToPanel(
+    "info",
+    `[${conf.label}] DOMロガー開始要求 → tabId=${tab.id} (${tab.url})`,
+  );
   try {
-    const response = await sendToClaudeTab(tab.id, {
+    const response = await sendToTab(tab.id, targetKey, {
       type: "start_dom_logger",
     });
     return response || { ok: false, error: "content_script からの応答なし" };
   } catch (e) {
     const errMsg = e && e.message ? e.message : String(e);
-    logToPanel("error", `DOMロガー開始失敗: ${errMsg}`);
+    logToPanel("error", `[${conf.label}] DOMロガー開始失敗: ${errMsg}`);
     return { ok: false, error: errMsg };
   }
 }
 
+// 以下のストレージ読み出し系は対象 AI 非依存（storage_key prefix で識別）。
+// Phase 3a Step2 以降で chatgpt.js が同じ prefix に書く設計なので、ここは不変。
 async function handleGetLatestDomLog() {
   try {
     const all = await chrome.storage.local.get(null);
@@ -292,8 +347,8 @@ async function handleGetLatestAssistantSnapshot() {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return false;
 
-  if (msg.type === "list_claude_tabs") {
-    listClaudeTabs()
+  if (msg.type === "list_ai_tabs") {
+    listAiTabs(msg.target)
       .then((result) => sendResponse({ ok: true, ...result }))
       .catch((e) =>
         sendResponse({
@@ -304,18 +359,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  if (msg.type === "send_to_claude") {
-    handleSendToClaude(msg.text, msg.tabId, msg.settings).then(sendResponse);
+  if (msg.type === "send_to_ai") {
+    handleSendToAi(msg.text, msg.tabId, msg.settings, msg.target).then(
+      sendResponse,
+    );
     return true;
   }
 
-  if (msg.type === "ping_claude") {
-    handlePingClaude(msg.tabId).then(sendResponse);
+  if (msg.type === "ping_ai") {
+    handlePingAi(msg.tabId, msg.target).then(sendResponse);
     return true;
   }
 
   if (msg.type === "start_dom_logger") {
-    handleStartDomLogger(msg.tabId).then(sendResponse);
+    handleStartDomLogger(msg.tabId, msg.target).then(sendResponse);
     return true;
   }
 

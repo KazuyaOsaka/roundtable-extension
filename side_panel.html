@@ -403,9 +403,16 @@
   <body>
     <header>
       <h1>🎙️ Roundtable</h1>
-      <span class="phase">Phase 1 Step 1A — claude.ai 送信パイプライン</span>
+      <span class="phase">Phase 3a Step1 — ルーティング一般化（claude / chatgpt）</span>
     </header>
     <main>
+      <div class="tab-row">
+        <label for="ai-target">対象 AI:</label>
+        <select id="ai-target" title="送信・ping・DOMロガー・連続テストの対象 AI">
+          <option value="claude" selected>🟧 Claude (claude.ai)</option>
+          <option value="chatgpt">🟩 ChatGPT (chatgpt.com)</option>
+        </select>
+      </div>
       <div class="tab-row">
         <label for="tab-select">送信先タブ:</label>
         <select id="tab-select"></select>
@@ -418,7 +425,7 @@
         >
           📍 現在のタブを送信先に
         </button>
-        <button id="reload-tabs" type="button" title="claude.ai のタブ一覧を再取得">
+        <button id="reload-tabs" type="button" title="対象 AI のタブ一覧を再取得">
           再読込
         </button>
       </div>
@@ -443,7 +450,7 @@
       <div class="input-row">
         <textarea
           id="message"
-          placeholder="claude.ai に送るメッセージ（例: こんにちは）"
+          placeholder="対象 AI に送るメッセージ（例: こんにちは）"
           spellcheck="false"
         ></textarea>
         <details class="test-mode">
@@ -482,7 +489,7 @@
           <button
             id="dom-logger"
             type="button"
-            title="60秒間 MutationObserver で claude.ai の DOM 変化を採取（手動）"
+            title="60秒間 MutationObserver で対象 AI の DOM 変化を採取（手動）"
           >
             📋 手動DOMロガー (60秒)
           </button>
@@ -509,7 +516,7 @@
           </button>
         </div>
         <div class="button-row">
-          <button id="ping" type="button" title="claude.ai タブに content_script が注入されているか確認">
+          <button id="ping" type="button" title="対象 AI タブに content_script が注入されているか確認">
             診断: ping
           </button>
           <button id="send" class="primary" type="button">送信</button>

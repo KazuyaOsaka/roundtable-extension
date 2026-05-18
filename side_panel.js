@@ -1,11 +1,21 @@
 // side_panel.js — Roundtable のサイドパネル UI ロジック
 // ============================================================
-// Phase 1 Step 1A:
-//   - 「送信先タブ」ドロップダウンで claude.ai タブを明示的に選ぶ
-//   - 起動時 / 「再読込」ボタンで list_claude_tabs を呼んで一覧更新
-//   - 送信／ping 時に選択中の tabId を background に渡す
+// Phase 3a Step1（ルーティング一般化）:
+//   - 「対象 AI」ドロップダウン（claude / chatgpt）を追加
+//   - 「送信先タブ」は対象 AI のタブのみを list_ai_tabs で取得
+//   - 送信／ping／DOMロガー／連続テスト(E) は選択中の target を毎回渡す
+//   - 対象 AI 切替時はタブ一覧を自動再取得
 //   - background / content_script からの log メッセージをログエリアに反映
+// claude を選んでいる限り送信パイプラインは Phase 2 と完全同一（リグレッ
+// ションなし）。chatgpt の content_script 実装は Step2 以降。
 // ============================================================
+
+// 対象 AI のラベル / アバター絵文字（仕様書 §6: Claude🟧 / ChatGPT🟩）
+const AI_TARGET_META = {
+  claude: { label: "Claude", site: "claude.ai", emoji: "🟧" },
+  chatgpt: { label: "ChatGPT", site: "chatgpt.com", emoji: "🟩" },
+};
+const DEFAULT_TARGET = "claude";
 
 const $log = document.getElementById("log");
 const $message = document.getElementById("message");
@@ -16,6 +26,7 @@ const $showLatestLog = document.getElementById("show-latest-log");
 const $showLatestSnapshot = document.getElementById("show-latest-snapshot");
 const $showLatestAutoLog = document.getElementById("show-latest-auto-log");
 const $ping = document.getElementById("ping");
+const $aiTarget = document.getElementById("ai-target");
 const $tabSelect = document.getElementById("tab-select");
 const $reloadTabs = document.getElementById("reload-tabs");
 const $useCurrentTab = document.getElementById("use-current-tab");
@@ -123,6 +134,15 @@ function getSelectedTabId() {
   return isNaN(n) ? null : n;
 }
 
+function getSelectedTarget() {
+  const v = $aiTarget ? $aiTarget.value : DEFAULT_TARGET;
+  return AI_TARGET_META[v] ? v : DEFAULT_TARGET;
+}
+
+function targetMeta(targetKey) {
+  return AI_TARGET_META[targetKey] || AI_TARGET_META[DEFAULT_TARGET];
+}
+
 function setActionButtonsEnabled(enabled) {
   $send.disabled = !enabled;
   $ping.disabled = !enabled;
@@ -141,12 +161,15 @@ function trySelectTabId(tabId) {
 
 async function refreshTabs(options = {}) {
   const { selectCurrentActive = false } = options;
+  const target = getSelectedTarget();
+  const tm = targetMeta(target);
   const previousTabId = getSelectedTabId();
   $reloadTabs.disabled = true;
   $useCurrentTab.disabled = true;
   try {
     const response = await chrome.runtime.sendMessage({
-      type: "list_claude_tabs",
+      type: "list_ai_tabs",
+      target,
     });
     if (!response || !response.ok) {
       logError(
@@ -167,13 +190,13 @@ async function refreshTabs(options = {}) {
     if (tabs.length === 0) {
       const opt = document.createElement("option");
       opt.value = NO_TAB_VALUE;
-      opt.textContent = "(claude.ai タブが開かれていません)";
+      opt.textContent = `(${tm.site} タブが開かれていません)`;
       opt.disabled = true;
       opt.selected = true;
       $tabSelect.appendChild(opt);
       setActionButtonsEnabled(false);
       logWarn(
-        "claude.ai のタブが見つかりません。Chrome で claude.ai を開いてから「再読込」を押してください。",
+        `${tm.label} (${tm.site}) のタブが見つかりません。Chrome で ${tm.site} を開いてから「再読込」を押してください。`,
       );
       return;
     }
@@ -217,14 +240,14 @@ async function refreshTabs(options = {}) {
     }[reason] || "";
 
     logInfo(
-      `claude.ai タブ ${tabs.length} 件を読み込みました${reasonNote}。`,
+      `[${tm.label}] ${tm.site} タブ ${tabs.length} 件を読み込みました${reasonNote}。`,
     );
     if (selectCurrentActive && response.currentTabId == null) {
       const urlNote = response.currentTabUrl
         ? ` (url=${response.currentTabUrl})`
         : "";
       logWarn(
-        `現在のアクティブタブは claude.ai ではありません${urlNote}。手動でドロップダウンから選んでください。`,
+        `現在のアクティブタブは ${tm.site} ではありません${urlNote}。手動でドロップダウンから選んでください。`,
       );
     }
   } catch (e) {
@@ -281,14 +304,15 @@ function appendJsonBlock({ title, json, storageKey }) {
   $log.scrollTop = $log.scrollHeight;
 }
 
-function appendResponseBlock({ text, selector }) {
+function appendResponseBlock({ text, selector, target }) {
+  const tm = targetMeta(target || DEFAULT_TARGET);
   const frame = document.createElement("div");
   frame.className = "response-frame";
 
   const header = document.createElement("div");
   header.className = "response-header";
   const label = document.createElement("span");
-  label.textContent = `🟧 Claude 応答 (${formatTimestamp()}, ${text.length}字)`;
+  label.textContent = `${tm.emoji} ${tm.label} 応答 (${formatTimestamp()}, ${text.length}字)`;
   const meta = document.createElement("span");
   meta.className = "response-meta";
   meta.textContent = selector ? `selector=${selector}` : "";
@@ -359,13 +383,16 @@ $domLogger.addEventListener("click", async () => {
     `DOMロガー開始要求 (tabId=${tabId})。60秒間 MutationObserver で採取します...`,
   );
   try {
+    const target = getSelectedTarget();
+    const tm = targetMeta(target);
     const response = await chrome.runtime.sendMessage({
       type: "start_dom_logger",
       tabId,
+      target,
     });
     if (response && response.ok) {
       logOk(
-        `DOMロガー開始成功。claude.ai タブに切替えて、送信→応答を1往復してください。結果は60秒後に表示されます。`,
+        `DOMロガー開始成功。${tm.site} タブに切替えて、送信→応答を1往復してください。結果は60秒後に表示されます。`,
       );
       // ボタンは dom_log_result 受信時に再度有効化される
     } else {
@@ -472,11 +499,13 @@ $ping.addEventListener("click", async () => {
     return;
   }
   $ping.disabled = true;
-  logInfo(`ping 開始 → tabId=${tabId}`);
+  const pingTarget = getSelectedTarget();
+  logInfo(`[${targetMeta(pingTarget).label}] ping 開始 → tabId=${tabId}`);
   try {
     const response = await chrome.runtime.sendMessage({
-      type: "ping_claude",
+      type: "ping_ai",
       tabId,
+      target: pingTarget,
     });
     if (response && response.ok) {
       logOk(`ping 成功。content_script 到達 (url=${response.url})`);
@@ -504,13 +533,15 @@ $send.addEventListener("click", async () => {
     return;
   }
   $send.disabled = true;
+  const sendTarget = getSelectedTarget();
   logInfo(
-    `送信開始 (tabId=${tabId}): "${text.length > 40 ? text.slice(0, 40) + "…" : text}"`,
+    `[${targetMeta(sendTarget).label}] 送信開始 (tabId=${tabId}): "${text.length > 40 ? text.slice(0, 40) + "…" : text}"`,
   );
   try {
     const response = await chrome.runtime.sendMessage({
-      type: "send_to_claude",
+      type: "send_to_ai",
       tabId,
+      target: sendTarget,
       text,
       settings: { silence_timeout_sec: cachedSilenceTimeoutSec },
     });
@@ -531,6 +562,7 @@ $send.addEventListener("click", async () => {
         appendResponseBlock({
           text: response.responseText,
           selector: response.responseSelector,
+          target: sendTarget,
         });
       } else if (response.responseError) {
         logWarn(`応答取得エラー: ${response.responseError}`);
@@ -640,8 +672,10 @@ $saveSettings.addEventListener("click", saveSettings);
 // ============================================================
 // Phase 2 E: 連続テストモード
 // ------------------------------------------------------------
-//   - 既存の chrome.runtime.sendMessage("send_to_claude") を流用して
+//   - 通常送信と同じ send_to_ai 経路（target 付き）を流用して、
 //     送信パイプラインのリグレッションを起こさない設計
+//     （Phase 3a Step1 で send_to_claude→send_to_ai に追従。claude
+//      選択時の挙動は Phase 2 と完全同一）
 //   - 中断フラグは side_panel.js のローカル変数（サイドパネル閉じたら消滅）
 //   - 連続テスト中は通常送信ボタン (送信 / ping) を disabled に
 //   - busy 検知時は次の sleep を +10 秒延長、リトライはなし
@@ -773,6 +807,8 @@ async function runConnectivityTest() {
     logWarn("[E] 送信先タブが選ばれていません。");
     return;
   }
+  const eTarget = getSelectedTarget();
+  const eTm = targetMeta(eTarget);
   const messages = eTestParseMessages();
   if (messages.length === 0) {
     logWarn("[E] メッセージが 1 つも入っていません。");
@@ -800,6 +836,7 @@ async function runConnectivityTest() {
   $testStart.disabled = true;
   $testAbort.disabled = false;
   setActionButtonsEnabled(false);
+  if ($aiTarget) $aiTarget.disabled = true;
   $testResults.innerHTML = "";
   $testSummary.textContent = "";
   $testSummary.classList.add("empty");
@@ -812,7 +849,7 @@ async function runConnectivityTest() {
   let extraSleepMs = 0;
 
   logOk(
-    `[E] 連続テスト開始 (${count} 回、メッセージ ${messages.length} 個、間隔 ${intervalMin}〜${intervalMax} 秒)`,
+    `[E] 連続テスト開始 [${eTm.label}] (${count} 回、メッセージ ${messages.length} 個、間隔 ${intervalMin}〜${intervalMax} 秒)`,
   );
 
   try {
@@ -831,8 +868,9 @@ async function runConnectivityTest() {
       let commError = null;
       try {
         response = await chrome.runtime.sendMessage({
-          type: "send_to_claude",
+          type: "send_to_ai",
           tabId,
+          target: eTarget,
           text: message,
           settings: { silence_timeout_sec: cachedSilenceTimeoutSec },
         });
@@ -894,6 +932,8 @@ async function runConnectivityTest() {
 
     const aggregate = {
       session_key: sessionKey,
+      target: eTarget,
+      target_label: eTm.label,
       started_at: new Date(sessionStartedMs).toISOString(),
       total_elapsed_ms: Date.now() - sessionStartedMs,
       requested_count: count,
@@ -925,6 +965,7 @@ async function runConnectivityTest() {
     $testStart.disabled = false;
     $testAbort.disabled = true;
     setActionButtonsEnabled(true);
+    if ($aiTarget) $aiTarget.disabled = false;
   }
 }
 
@@ -940,8 +981,17 @@ $testMessages.value = DEFAULT_TEST_MESSAGES.join("\n");
 $testStart.addEventListener("click", runConnectivityTest);
 $testAbort.addEventListener("click", abortConnectivityTest);
 
+// 対象 AI 切替: タブ一覧を即時再取得し、現在のアクティブタブが新対象なら自動選択
+if ($aiTarget) {
+  $aiTarget.addEventListener("change", () => {
+    const tm = targetMeta(getSelectedTarget());
+    logInfo(`対象 AI を ${tm.label} (${tm.site}) に切替。タブ一覧を再取得します...`);
+    refreshTabs({ selectCurrentActive: true });
+  });
+}
+
 logInfo(
-  "サイドパネル起動。現在のアクティブタブが claude.ai なら自動で送信先に設定されます。",
+  "サイドパネル起動。対象 AI（既定: Claude）の現在のアクティブタブを自動で送信先に設定します。",
 );
 loadSettings();
 // 起動時は「現在のウィンドウのアクティブタブ」を優先して選択する。
