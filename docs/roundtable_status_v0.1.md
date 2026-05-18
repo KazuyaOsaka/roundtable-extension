@@ -421,6 +421,64 @@ Phase 3a (ChatGPT 対応 + ルーティング一般化)
 
 ---
 
+## Phase 3a 進捗ログ
+
+**作業ブランチ**: feature/phase3a-chatgpt（feature/phase2-dom-hardening
+先端 e09d650 から派生。main は Phase 1 まで、phase2 ブランチは Phase 2
+完了の安全な記録として温存、以後コミットしない）
+
+### ブランチ運用の想定外（2026-05-18 解決）
+
+当初「main から phase3a を派生」予定だったが、**Phase 2 / Phase 3 prep は
+main 未マージで feature/phase2-dom-hardening 上にのみ存在**（main は
+Phase 1 まで、claude.js 937 行 / phase2 は 1517 行）と判明。main 派生だと
+Phase 2 成果（E モード含む）を喪失しリグレッションテスト自体が不能になる
+ため、Kazuya 判断で **phase2 先端から派生**に変更。
+
+### Step1: ルーティング一般化（commit c0d9d5a）
+
+**完了日**: 2026-05-18
+
+claude 固定だったルーティング層を `target`（claude/chatgpt）でパラメータ化。
+
+| ファイル | 変更 |
+|---|---|
+| background.js | `AI_TARGETS` 定義。`list_claude_tabs`→`list_ai_tabs`、`send_to_claude`→`send_to_ai`、`ping_claude`→`ping_ai`（`msg.target`）。content_script 向け型(send_to_claude/ping/start_dom_logger)は不変 |
+| side_panel.html/js | 「対象 AI」セレクタ追加、全送信経路に target 付与、切替で一覧再取得、連続テスト中は対象ロック、E も send_to_ai 追従 |
+| chatgpt.js | ルーティング疎通用の最小実装（二重ロードガード + ping 応答のみ）。send_to_chatgpt / start_dom_logger は `notImplemented` 明示返却 |
+
+**リグレッション安全性**: `git diff e09d650 -- content_scripts/claude.js`
+が空＝claude.js 完全無変更。claude 選択時は Phase 2 と挙動完全同一。
+
+**スコープ c の最小逸脱（Kazuya 承認済み）**:
+スコープ c「chatgpt.js 11 行維持」と d「ChatGPT で ping 疎通」が両立不能
+だったため、ping リスナ + 二重ロードガードのみ追加。調査(Step2)/送信
+(Step4)ロジックは未含。指示ミスは Kazuya 認、逸脱を正式承認。
+
+### Step1 動作確認結果（2026-05-18、Kazuya 実機確認）
+
+| テスト | 結果 |
+|---|---|
+| 1. Claude 通常往復 | ✅ 対象 AI セレクタ動作、「こんにちは」往復成功 |
+| 2. **リグレッション（E モード 10 連続）** | ✅✅✅ **10/10 成功、全体経過 168 秒**。Phase 2 完了時 (18759c2) の 10/10 完全維持＝ルーティング一般化で Claude を壊していない客観証拠 |
+| 3. ChatGPT 疎通 | ✅ 対象 AI 切替で chatgpt.com タブ 15 件表示、送信時 `notImplemented` 期待通り（ルーティング機能を確認。ping 単体は未試行だが send 経路で疎通確認済み） |
+
+→ **Step1 完了**。次は Step1 fix（タブ表示改善）→ Step2（調査専用 chatgpt.js）。
+
+### Step1 動作確認で発見した課題（Kazuya 指摘）
+
+1. **ChatGPT タブ表示が分かりにくい**: ChatGPT の URL 構造（`/g/g-p-.../c/...`、
+   新規は `/`）は claude.ai と異なり、URL path がノイズ。タイトルが
+   読みにくい。→ Step1 fix でタブ表示を対象 AI 別に分岐改善。
+2. **ChatGPT のモデル切替（GPT-4o/5/Thinking/Pro）**: 同一チャット内で
+   モデル切替可能。Roundtable がモデルを制御するかは仕様未定義。
+   → 仕様書 v0.5 §12 に運用ルールを追記（Roundtable はモデルを
+   切り替えない。Kazuya が ChatGPT 側 UI で事前選択。送信時に現在の
+   モデル名を DOM から読み取り metadata 記録。Step2 の DOM 調査で
+   モデル選択 UI も採取対象に含める）。
+
+---
+
 ## コーディング規約（運用ルール）
 
 ### ログタグ付け（Phase 2 A4 以降）

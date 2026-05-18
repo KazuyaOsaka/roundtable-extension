@@ -114,16 +114,55 @@ function shortenPath(path) {
     .join("/");
 }
 
-function formatTabLabel(tab) {
-  let path = "/";
-  try {
-    path = new URL(tab.url).pathname || "/";
-  } catch (_) {}
-  path = shortenPath(path);
-  if (path.length > 36) path = path.slice(0, 33) + "...";
-  const title = (tab.title || "").trim();
-  const titleShort = title.length > 40 ? title.slice(0, 37) + "..." : title;
+// ChatGPT の pathname を「小さなサブ情報」に圧縮する。
+//   /                          → 新規チャット
+//   /c/<uuid>                  → /c/<6文字>…
+//   /g/g-p-.../c/<uuid>        → Proj /c/<6文字>…（プロジェクト内会話）
+//   /g/g-...                   → カスタムGPT
+//   その他 (/gpts 等)          → 短縮 path
+function chatgptUrlHint(pathname) {
+  if (!pathname || pathname === "/") return "新規チャット";
+  const cMatch = pathname.match(/\/c\/([0-9a-f-]+)/i);
+  const isProject = pathname.startsWith("/g/");
+  if (cMatch) {
+    return (isProject ? "Proj " : "") + "/c/" + cMatch[1].slice(0, 6) + "…";
+  }
+  if (isProject) return "カスタムGPT";
+  let p = shortenPath(pathname);
+  if (p.length > 20) p = p.slice(0, 18) + "…";
+  return p;
+}
+
+// 対象 AI ごとにタブ表示を分岐。
+//   Claude  : 既存挙動を維持（[path] title）。Kazuya 検証済みなので変えない
+//   ChatGPT : タイトル優先、URL は小さなサブ情報（タイトルで話題を即識別）
+// UX 最重要観点 = Kazuya が「どのタブが何の話か」を素早く識別できること。
+// Claude Code 内で完璧を狙わず、Kazuya の FB で反復する前提。
+function formatTabLabel(tab, targetKey) {
   const marker = tab.isCurrentWindowActive ? "★ " : "  ";
+  let pathname = "/";
+  try {
+    pathname = new URL(tab.url).pathname || "/";
+  } catch (_) {}
+  const rawTitle = (tab.title || "").trim();
+
+  if (targetKey === "chatgpt") {
+    // タブタイトル末尾の " - ChatGPT" / " | ChatGPT" を剥がして読みやすく
+    let title = rawTitle.replace(/\s*[-|]\s*ChatGPT\s*$/i, "").trim();
+    const isNew = pathname === "/";
+    if (!title || /^chatgpt$/i.test(title)) {
+      title = isNew ? "新規チャット" : "(Untitled)";
+    }
+    const titleShort =
+      title.length > 44 ? title.slice(0, 41) + "…" : title;
+    return `${marker}${titleShort}  · ${chatgptUrlHint(pathname)}`;
+  }
+
+  // Claude（既存挙動を維持）
+  let path = shortenPath(pathname);
+  if (path.length > 36) path = path.slice(0, 33) + "...";
+  const titleShort =
+    rawTitle.length > 40 ? rawTitle.slice(0, 37) + "..." : rawTitle;
   return `${marker}[${path}] ${titleShort || "(無題)"}`;
 }
 
@@ -203,7 +242,7 @@ async function refreshTabs(options = {}) {
     for (const t of tabs) {
       const opt = document.createElement("option");
       opt.value = String(t.id);
-      opt.textContent = formatTabLabel(t);
+      opt.textContent = formatTabLabel(t, target);
       opt.title = t.url;
       $tabSelect.appendChild(opt);
     }
