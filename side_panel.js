@@ -31,6 +31,7 @@ const $tabSelect = document.getElementById("tab-select");
 const $reloadTabs = document.getElementById("reload-tabs");
 const $useCurrentTab = document.getElementById("use-current-tab");
 const $silenceTimeout = document.getElementById("silence-timeout");
+const $backstopTimeout = document.getElementById("backstop-timeout");
 const $saveSettings = document.getElementById("save-settings");
 const $settingsStatus = document.getElementById("settings-status");
 // Phase 2 E: 連続テストモード関連
@@ -53,6 +54,13 @@ const NO_TAB_VALUE = "__none__";
 const SETTINGS_KEY = "roundtable_settings";
 const DEFAULT_SILENCE_TIMEOUT_SEC = 30;
 let cachedSilenceTimeoutSec = DEFAULT_SILENCE_TIMEOUT_SEC;
+// Phase 3a Step1 fix3: バックストップ時間の可変化（最終安全弁）。
+// content_script (claude.js) は settings.backstop_timeout_ms を既に解釈し、
+// 「backstop_ms >= silence_ms」でなければ既定 600 秒にフォールバックする。
+// よって UI 側で「バックストップ ≥ 無音タイムアウト」を保証して送る。
+const DEFAULT_BACKSTOP_SEC = 600;
+const MAX_BACKSTOP_SEC = 3600;
+let cachedBackstopSec = DEFAULT_BACKSTOP_SEC;
 
 // Phase 2 E: 連続テストモードの定数と状態
 const E_TEST_RESULT_KEY_PREFIX = "e_test_result_";
@@ -582,7 +590,10 @@ $send.addEventListener("click", async () => {
       tabId,
       target: sendTarget,
       text,
-      settings: { silence_timeout_sec: cachedSilenceTimeoutSec },
+      settings: {
+        silence_timeout_sec: cachedSilenceTimeoutSec,
+        backstop_timeout_ms: cachedBackstopSec * 1000,
+      },
     });
     if (response && response.ok) {
       logOk(
@@ -652,9 +663,42 @@ function validateSilenceTimeout(raw) {
   }
   const warnings = [];
   if (n > 600) {
-    warnings.push("600 秒（A3 のバックストップ）以下を推奨します");
+    warnings.push("無音 600 秒超は長め。バックストップ以下である必要があります");
   } else if (n < 5) {
     warnings.push("5 秒未満は誤発火リスクが高いです");
+  }
+  return { value: n, warnings };
+}
+
+// Phase 3a Step1 fix3: バックストップ時間の検証。
+//   - 整数・1 以上・上限 MAX_BACKSTOP_SEC（3600 秒）
+//   - 「バックストップ ≥ 無音タイムアウト」は saveSettings で横断検証する
+//     （単体ではここまで。silenceSec を渡せば下回りもここで弾く）
+function validateBackstopTimeout(raw, silenceSec) {
+  const trimmed = (raw || "").trim();
+  if (trimmed === "") {
+    return { error: `数値を入力してください (input="")` };
+  }
+  const n = Number(trimmed);
+  if (!isFinite(n) || !Number.isInteger(n)) {
+    return { error: `数値を入力してください (input="${trimmed}")` };
+  }
+  if (n < 1) {
+    return { error: `1 秒以上を指定してください (input="${trimmed}")` };
+  }
+  if (n > MAX_BACKSTOP_SEC) {
+    return {
+      error: `バックストップは上限 ${MAX_BACKSTOP_SEC} 秒以下を指定してください (input="${trimmed}")`,
+    };
+  }
+  if (typeof silenceSec === "number" && n < silenceSec) {
+    return {
+      error: `バックストップ (${n}秒) は無音タイムアウト (${silenceSec}秒) 以上である必要があります`,
+    };
+  }
+  const warnings = [];
+  if (n < 60) {
+    warnings.push("バックストップ 60 秒未満は長考モデルで早期打ち切りの恐れ");
   }
   return { value: n, warnings };
 }
@@ -672,33 +716,60 @@ async function loadSettings() {
     } else {
       cachedSilenceTimeoutSec = DEFAULT_SILENCE_TIMEOUT_SEC;
     }
+    if (
+      typeof stored.backstop_timeout_sec === "number" &&
+      Number.isInteger(stored.backstop_timeout_sec) &&
+      stored.backstop_timeout_sec >= 1 &&
+      stored.backstop_timeout_sec <= MAX_BACKSTOP_SEC &&
+      stored.backstop_timeout_sec >= cachedSilenceTimeoutSec
+    ) {
+      cachedBackstopSec = stored.backstop_timeout_sec;
+    } else {
+      cachedBackstopSec = DEFAULT_BACKSTOP_SEC;
+    }
     $silenceTimeout.value = String(cachedSilenceTimeoutSec);
+    $backstopTimeout.value = String(cachedBackstopSec);
   } catch (e) {
-    logWarn(`設定読み込み失敗: ${e && e.message ? e.message : e}（デフォルト ${DEFAULT_SILENCE_TIMEOUT_SEC} 秒を使用）`);
+    logWarn(`設定読み込み失敗: ${e && e.message ? e.message : e}（デフォルト 無音 ${DEFAULT_SILENCE_TIMEOUT_SEC} 秒 / バックストップ ${DEFAULT_BACKSTOP_SEC} 秒を使用）`);
     cachedSilenceTimeoutSec = DEFAULT_SILENCE_TIMEOUT_SEC;
+    cachedBackstopSec = DEFAULT_BACKSTOP_SEC;
     $silenceTimeout.value = String(cachedSilenceTimeoutSec);
+    $backstopTimeout.value = String(cachedBackstopSec);
   }
 }
 
 async function saveSettings() {
-  const raw = $silenceTimeout.value;
-  const v = validateSilenceTimeout(raw);
-  if (v.error) {
-    setSettingsStatus("error", `✗ ${v.error}`);
-    logWarn(`設定保存失敗: 無音タイムアウト値が不正 (input="${raw}") — ${v.error}`);
+  const rawSilence = $silenceTimeout.value;
+  const vs = validateSilenceTimeout(rawSilence);
+  if (vs.error) {
+    setSettingsStatus("error", `✗ 無音タイムアウト: ${vs.error}`);
+    logWarn(`設定保存失敗: 無音タイムアウト値が不正 (input="${rawSilence}") — ${vs.error}`);
+    return;
+  }
+  const rawBackstop = $backstopTimeout.value;
+  const vb = validateBackstopTimeout(rawBackstop, vs.value);
+  if (vb.error) {
+    setSettingsStatus("error", `✗ バックストップ: ${vb.error}`);
+    logWarn(`設定保存失敗: バックストップ値が不正 (input="${rawBackstop}") — ${vb.error}`);
     return;
   }
   try {
     await chrome.storage.local.set({
-      [SETTINGS_KEY]: { silence_timeout_sec: v.value },
+      [SETTINGS_KEY]: {
+        silence_timeout_sec: vs.value,
+        backstop_timeout_sec: vb.value,
+      },
     });
-    cachedSilenceTimeoutSec = v.value;
-    if (v.warnings && v.warnings.length > 0) {
-      setSettingsStatus("warn", `⚠ 保存しました (${v.value}秒): ${v.warnings.join(", ")}`);
-      logWarn(`設定保存: 無音タイムアウト = ${v.value} 秒（${v.warnings.join(", ")}）`);
+    cachedSilenceTimeoutSec = vs.value;
+    cachedBackstopSec = vb.value;
+    const warnings = [...(vs.warnings || []), ...(vb.warnings || [])];
+    const summary = `無音 ${vs.value}秒 / バックストップ ${vb.value}秒`;
+    if (warnings.length > 0) {
+      setSettingsStatus("warn", `⚠ 保存しました (${summary}): ${warnings.join(", ")}`);
+      logWarn(`設定保存: ${summary}（${warnings.join(", ")}）`);
     } else {
-      setSettingsStatus("ok", `✓ 保存しました (${v.value}秒)`);
-      logOk(`設定保存: 無音タイムアウト = ${v.value} 秒`);
+      setSettingsStatus("ok", `✓ 保存しました (${summary})`);
+      logOk(`設定保存: ${summary}`);
     }
   } catch (e) {
     setSettingsStatus("error", `✗ 保存失敗: ${e && e.message ? e.message : e}`);
@@ -911,7 +982,10 @@ async function runConnectivityTest() {
           tabId,
           target: eTarget,
           text: message,
-          settings: { silence_timeout_sec: cachedSilenceTimeoutSec },
+          settings: {
+            silence_timeout_sec: cachedSilenceTimeoutSec,
+            backstop_timeout_ms: cachedBackstopSec * 1000,
+          },
         });
       } catch (e) {
         commError = e && e.message ? e.message : String(e);

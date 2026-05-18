@@ -435,11 +435,17 @@
           <label for="silence-timeout">無音タイムアウト:</label>
           <input id="silence-timeout" type="number" min="1" step="1" value="30" />
           <span>秒</span>
+        </div>
+        <div class="settings-row">
+          <label for="backstop-timeout">バックストップ:</label>
+          <input id="backstop-timeout" type="number" min="1" step="1" value="600" />
+          <span>秒</span>
           <button id="save-settings" type="button">保存</button>
           <div id="settings-status" class="settings-status"></div>
         </div>
         <div class="settings-help">
-          応答中の AI が活動を完全停止したと判定するまでの時間。テキスト変化または Thinking バッジ表示中はリセットされます。デフォルト 30 秒。
+          <b>無音タイムアウト</b>: 応答中の AI が活動を完全停止したと判定するまでの時間。テキスト変化または Thinking バッジ表示中はリセット。デフォルト 30 秒。<br />
+          <b>バックストップ</b>: 無音判定とは別の最終安全弁。この時間を超えたら強制的に応答完了扱い。デフォルト 600 秒、上限 3600 秒。ChatGPT Pro 等の長考モデル利用時に手動で引き上げる（バックストップ ≥ 無音タイムアウト である必要あり）。
         </div>
       </details>
       <div class="log-header">
