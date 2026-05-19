@@ -477,6 +477,74 @@ claude 固定だったルーティング層を `target`（claude/chatgpt）で�
    モデル名を DOM から読み取り metadata 記録。Step2 の DOM 調査で
    モデル選択 UI も採取対象に含める）。
 
+### Step1 fix2: モデル別タイムアウト戦略の仕様化（commit 2d0ed09）
+
+**完了日**: 2026-05-18
+
+仕様書 v0.5 §12.1.1 を追加。ChatGPT Pro が 5〜15 分かかり A3（無音 30 秒）
+では実用不能な問題に対し、**モデル DOM 判定による動的制御は採らず**、
+(1) Thinking/Reasoning/Pro 思考表示の確実検知（思考中は無音 TO リセット）
++ (2) バックストップ手動可変、の二段で対応する方針を確定。
+
+### Step1 fix3: バックストップ可変化（commit 13c0793）
+
+**完了日**: 2026-05-18
+
+side_panel に「バックストップ(秒)」設定を追加（既定 600 / 上限 3600 /
+バックストップ ≥ 無音 TO の横断検証）。送信・E 両経路で
+`backstop_timeout_ms` を送出。**claude.js は無変更**（既に
+`settings.backstop_timeout_ms` を解釈）＝リグレッション源なし。
+
+進め方判断: バックストップ可変化は chatgpt.js 調査ロジックではなく設定
+UI 変更のため **Step1 fix3 として独立コミット**。これにより Step1
+スコープ（ルーティング + 設定 + タブ表示）を確定させ、Step2 を純粋な
+chatgpt.js 調査に分離（Step1/Step2 の境目を明確化）。
+
+### Step1 完全完了: fix3 動作確認結果（2026-05-18、Kazuya 実機確認）
+
+| テスト | 結果 |
+|---|---|
+| 既定表示（30秒 / 600秒） | ✅ |
+| 正常保存（無音60/バックストップ1800） | ✅ ログ 17:59:13 に `[A3] 無音60秒/バックストップ1800秒` 表示。`backstop_timeout_ms` が content_script まで end-to-end で到達した客観証拠 |
+| 横断検証（バックストップ1秒 < 無音30秒） | ✅ 設定保存失敗、保存されず |
+| 上限超え（5000秒） | ✅ `⚠ 上限 3600 秒以下を指定してください` |
+| Claude 通常送信リグレッション | ✅ 86字応答取得成功、prefix 重複検出も正常発火 |
+
+→ **Phase 3a Step1 完全完了**（ルーティング・設定・タブ表示が堅牢）。
+
+### 既知の課題（追記、対応不要）
+
+**5. Claude 応答にメタ認知ログが稀に混入（2026-05-18 観察、対応不要）**
+- 現象: Claude 応答に「識別した言語に応じて友好的に応答することを
+  決定した。」等のメタ認知文が 2 回混入するケースを観察
+- 原因: claude.ai 側のレアな挙動。Roundtable のバグではない
+- 影響: なし。dedup が「prefix 重複検出（段落2が段落1の prefix）」で
+  正常動作し 86字採用 / 32字破棄。Roundtable 側の対応不要
+- 記録目的のみ（既知の課題#1〜#4 と異なり修正対象ではない）
+
+### Step2: 調査専用 chatgpt.js（commit 3b87b10）
+
+**実装完了日**: 2026-05-19 / **動作確認**: Kazuya 採取待ち
+
+chatgpt.js を Step1 最小スタブから調査専用ロジックに差し替え:
+- 二重ロードガード + ping（Step1 から維持）
+- 手動 DOM ロガー（claude.js domLogger 移植、挙動同一。
+  aria-live / conversation-turn も分類対象に追加）
+- ChatGPT 構造スナップショット（ロガー停止時に自動採取、
+  `assistant_snapshot_<ts>` に保存）。網羅候補 + 狙い撃ちプローブ:
+  全ボタン aria-label / 停止ボタン / **Thinking・Reasoning・Pro** /
+  モデル選択 UI / composer / aria-live / bot 検知
+- **送信は notImplemented 維持**（Step4 送り）
+- claude.js / background.js / side_panel.js 無変更＝リグレッション源なし
+
+採取主目的（仕様書 v0.5 §12.1.1）: Thinking/Pro 思考表示の確実な
+セレクタ確定。Phase 2 で claude.ai で空振りした Thinking 検知の知見が
+ChatGPT 運用性の鍵として回収される構図。
+
+**次**: Kazuya が chatgpt.com で 3 往復採取（短文 / 長文2000字級 /
+Thinking or Pro モード ← 最重要）→ JSON を解析して Step4 必須セレクタ
+群を確定。想定外あれば仕様書更新で立ち止まり（ピボット判断意識）。
+
 ---
 
 ## コーディング規約（運用ルール）
