@@ -417,6 +417,53 @@ ChatGPT は選択モデルにより応答時間が大きく異なる。特に **
 含む長考モデルに対応する。これは §10 の「単純な時間タイムアウトを
 かけない／無音タイムアウト方式」の精神と整合する。
 
+#### 12.1.2 Kazuya の ChatGPT 運用想定（v0.5 Step2 followup 追記）
+
+**Kazuya の運用想定では、ChatGPT は Thinking または Pro のみ使用する
+（普通モード＝GPT-4o 等の即答モードは使わない）。**
+
+この前提が ChatGPT 対応の設計優先度を決める:
+
+- **ChatGPT 対応の核心は Thinking 検知精度**である。普通モード（即答）
+  対応は優先度が低い（Kazuya が使わないため、Step4 でも普通モードの
+  最適化に時間を割かない）。
+- 無音タイムアウト 30 秒のままだと Thinking 完了前に毎回発火しうる。
+  Thinking 検知（思考中表示が見える間は無音 TO リセット）が無いと、
+  Thinking はもちろん Pro（5〜15 分）は確実に落ちる。
+- すなわち §12.1.1 の戦略 1（Thinking/Reasoning/Pro 検知）は ChatGPT に
+  おいて「あれば良い補助」ではなく**必須要件**である。
+
+**Phase 3a Step2 採取で確認されたパターン**（GPT-5.5 Thinking、
+2026-05-19、短文 1 往復・43 イベント + 構造スナップショット）:
+
+- 思考中表示: テキスト「思考中」を持つ要素 + `class*="loading-shimmer"`
+  （`author-role="assistant"` 配下に出現）
+- 思考完了マーカー: テキスト「思考時間: XXX」を含む button
+  （クリックで思考過程を展開できる UI。これが出れば応答完了が確実）
+- ライフサイクル実測: t≈4.5s 思考中出現 → t≈9.9s 思考中消滅・
+  「思考時間」へ切替 → t≈12.2s 停止ボタン消滅で完了
+- 主要セレクタ（claude.ai より堅牢、id + data-testid + aria-label 併用）:
+  - 入力欄: `#prompt-textarea`
+  - 送信: `button#composer-submit-button[data-testid="send-button"]`
+    （aria-label「プロンプトを送信する」）
+  - 停止: 同一 ID で `[data-testid="stop-button"]`
+    （aria-label「回答を停止」）。送信⇔停止が同 ID で testid 切替
+  - 応答抽出: `[data-message-author-role="assistant"]`（最後の要素）
+  - モデル表示: `[data-testid="model-selector-dropdown"]`（§7 metadata.model）
+
+→ claude.ai で空振りした Thinking 検知が ChatGPT で実証された。
+§12.1.1 の戦略はそのまま実装可能。
+
+**Step4 に持ち越す未確認事項**（解決済みではない、連続テストで検証）:
+
+1. aria-live 二重 render の有無（Phase 2 の「Y が主役」が ChatGPT で
+   成立するか。短文 1 回では未到達。Step4 の 10 連続テストで Y 発火
+   パターンを観測して判定）
+2. 長文ストリーミングの安定化閾値（現状 2500ms は claude.ai 実測値。
+   ChatGPT の更新粒度が異なる可能性。Step4 長文テストで実測）
+3. bot 検知方式（Step2 採取で Cloudflare/reCAPTCHA の痕跡なし。
+   汎用ガードのみ移植し検知時停止）
+
 ---
 
 ## 13. 残り未決事項
