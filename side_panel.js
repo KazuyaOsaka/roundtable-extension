@@ -568,6 +568,24 @@ $ping.addEventListener("click", async () => {
   }
 });
 
+// Phase 3a Step1 fix4: メインのメッセージ欄を「Enter=送信 / Shift+Enter=改行」に。
+//   - 各社チャット（Claude/ChatGPT/Gemini）の標準動作に合わせる（Kazuya UX）
+//   - 対象は #message のみ。E モードの test-messages textarea は「1 行 1
+//     メッセージ」が本質なので Enter=改行のまま据え置く（送信化すると複数
+//     メッセージを書けず UX を壊すため、意図的に対象外）
+//   - IME 変換確定の Enter で誤送信しないよう isComposing / keyCode 229 を除外
+//   - 送信ボタンが disabled（応答中/タブ未選択）の時は何もしない
+$message.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.shiftKey) return;
+  if (e.isComposing || e.keyCode === 229) return; // IME 変換中は確定に使わせる
+  e.preventDefault();
+  if ($send.disabled) {
+    logWarn("送信できません（応答中、またはタブ未選択）。");
+    return;
+  }
+  $send.click();
+});
+
 $send.addEventListener("click", async () => {
   const tabId = getSelectedTabId();
   if (tabId == null) {
