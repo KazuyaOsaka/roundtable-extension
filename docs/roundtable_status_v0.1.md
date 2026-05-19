@@ -1,7 +1,7 @@
 # Roundtable プロジェクト 進捗サマリー
 
-**最終更新**: 2026-05-18
-**現在のフェーズ**: Phase 2 完了 → Phase 3 着手準備中
+**最終更新**: 2026-05-19
+**現在のフェーズ**: Phase 3a 進行中（Step1 完了 / Step2・Step3 完了 → Step4 着手）
 
 ---
 
@@ -23,7 +23,7 @@
 | 0 | 環境準備（拡張の骨格） | ✅ 完了（commit ddd83b5） |
 | 1 | Claudeタブで1往復（PoC） | ✅ 完了（commit 2bda463） |
 | 2 | DOM操作の堅牢化 | ✅ 完了（commit 68bd150、10/10 連続成功達成） |
-| 3 | 3社対応 | 🎯 次の対象 |
+| 3 | 3社対応 | 🚧 Phase 3a 進行中（ChatGPT: Step1-3 完了、Step4 着手 / Phase 3b Gemini 未着手） |
 | 4 | 議論履歴共有とターン制御 | 未着手 |
 | 5 | システムプロンプト整備 | 未着手 |
 | 6 | UI整備 | 未着手 |
@@ -524,7 +524,7 @@ chatgpt.js 調査に分離（Step1/Step2 の境目を明確化）。
 
 ### Step2: 調査専用 chatgpt.js（commit 3b87b10）
 
-**実装完了日**: 2026-05-19 / **動作確認**: Kazuya 採取待ち
+**実装完了日**: 2026-05-19 / **採取・解析完了日**: 2026-05-19（Step2 完了、Step3 解析も本セッションで実施済み）
 
 chatgpt.js を Step1 最小スタブから調査専用ロジックに差し替え:
 - 二重ロードガード + ping（Step1 から維持）
@@ -541,9 +541,52 @@ chatgpt.js を Step1 最小スタブから調査専用ロジックに差し替�
 セレクタ確定。Phase 2 で claude.ai で空振りした Thinking 検知の知見が
 ChatGPT 運用性の鍵として回収される構図。
 
-**次**: Kazuya が chatgpt.com で 3 往復採取（短文 / 長文2000字級 /
-Thinking or Pro モード ← 最重要）→ JSON を解析して Step4 必須セレクタ
-群を確定。想定外あれば仕様書更新で立ち止まり（ピボット判断意識）。
+### Step2 採取結果（2026-05-19、Kazuya 実機採取 + Step3 解析）
+
+**採取条件**: GPT-5.5 Thinking、短文「こんにちは」1 往復、43 イベント
++ 構造スナップショット（assistant_snapshot_1779183267410）。
+**Kazuya 重要情報**: ChatGPT は Thinking か Pro でしか使わない
+（普通モード不使用）→ 仕様書 v0.5 §12.1.2 に明文化。
+
+**3 往復予定 → 1 往復で十分と判断**（Kazuya 推奨 + Claude Code 同意）。
+理由: 短文 + Thinking で最も情報量の多いケースを取得、Step4 必須
+セレクタほぼ全取得、ChatGPT DOM は id+testid で claude.ai より堅牢。
+長文挙動は Step4 で走らせて必要なら追加調査の方が効率的。
+
+**確定セレクタ（claude.ai より堅牢）**:
+
+| 用途 | セレクタ |
+|---|---|
+| 入力欄 | `#prompt-textarea` |
+| 送信 | `button#composer-submit-button[data-testid="send-button"]`（aria「プロンプトを送信する」） |
+| 停止 | 同 ID で `[data-testid="stop-button"]`（aria「回答を停止」）。送信⇔停止が同 ID で testid 切替 |
+| 応答抽出 | `[data-message-author-role="assistant"]`（最後の要素）。claude の戦略2が ChatGPT では第一候補、Retry 祖先探索 不要 |
+| 会話ターン | `[data-testid="conversation-turn-N"]` |
+| モデル表示 | `[data-testid="model-selector-dropdown"]`（§7 metadata.model） |
+
+**Thinking ライフサイクル（Phase 2 最大の回収点）**:
+```
+t=4451ms  「思考中」+ author-role=assistant 出現
+t=6470ms  「思考中」+ class=loading-shimmer
+t=9866ms  「思考中」消滅 → 「思考時間: 数秒」へ
+t=12151ms 停止ボタン消滅 → 完了
+```
+- Thinking 検知候補: text「思考中」+ `class*="loading-shimmer"`
+- 完了マーカー: text「思考時間: XXX」を含む button
+- claude.ai で空振りした Thinking 検知が ChatGPT で実証 →
+  仕様書 v0.5 §12.1.1 戦略がそのまま動く
+
+**Step4 に持ち越す未確認3点（解決済みでない、連続テストで検証）**:
+1. aria-live 二重 render の有無（Phase 2「Y が主役」が ChatGPT で
+   成立するか。短文1回では未到達 → Step4 10連続で Y 発火観測）
+2. 長文ストリーミング安定化閾値（現状 2500ms は claude.ai 実測値 →
+   Step4 長文で実測チューニング）
+3. bot 検知（Step2 で痕跡なし → 汎用ガードのみ移植、検知時停止）
+
+**ピボット評価**: ChatGPT DOM は claude.ai より堅牢（id+testid+aria
+三重）。Thinking 検知も実証済み。現時点でピボットリスクは低い。
+
+→ **Step2 完了 / Step3（解析）実施済み**。次は Step4（送信パイプライン）。
 
 ---
 
