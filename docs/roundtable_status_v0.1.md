@@ -1,7 +1,7 @@
 # Roundtable プロジェクト 進捗サマリー
 
 **最終更新**: 2026-05-19
-**現在のフェーズ**: Phase 3a 進行中（Step1 完了 / Step2・Step3 完了 → Step4 着手）
+**現在のフェーズ**: Phase 3a 進行中（Step1-4 完了、chatgpt.js production ready → Step1 fix4 / Step6 / Phase 3b 判断）
 
 ---
 
@@ -23,7 +23,7 @@
 | 0 | 環境準備（拡張の骨格） | ✅ 完了（commit ddd83b5） |
 | 1 | Claudeタブで1往復（PoC） | ✅ 完了（commit 2bda463） |
 | 2 | DOM操作の堅牢化 | ✅ 完了（commit 68bd150、10/10 連続成功達成） |
-| 3 | 3社対応 | 🚧 Phase 3a 進行中（ChatGPT: Step1-3 完了、Step4 着手 / Phase 3b Gemini 未着手） |
+| 3 | 3社対応 | 🚧 Phase 3a: ChatGPT Step1-4 完了（production ready）/ Phase 3b Gemini 未着手 |
 | 4 | 議論履歴共有とターン制御 | 未着手 |
 | 5 | システムプロンプト整備 | 未着手 |
 | 6 | UI整備 | 未着手 |
@@ -587,6 +587,44 @@ t=12151ms 停止ボタン消滅 → 完了
 三重）。Thinking 検知も実証済み。現時点でピボットリスクは低い。
 
 → **Step2 完了 / Step3（解析）実施済み**。次は Step4（送信パイプライン）。
+
+### Step4: chatgpt.js 送信パイプライン（commit 872bd7a）
+
+**実装・動作確認完了日**: 2026-05-19（Kazuya 実機確認）
+
+chatgpt.js に送信パイプライン実装（claude.js アーキ移植、ChatGPT
+セレクタ差替え。調査ツール=手動DOMロガー/スナップショット維持）。
+入力欄 `#prompt-textarea` / 送信 send-button / 停止 stop-button
+（同 ID で testid 切替）/ 抽出 `[data-message-author-role=assistant]`。
+Thinking 検知（思考中+loading-shimmer、無音TOリセット）。
+**claude.js/background.js/side_panel.js 無変更＝リグレッション源なし**。
+
+**動作確認結果（Step4 完了条件 全 ✅）**:
+
+| テスト | 結果 |
+|---|---|
+| 1. ChatGPT 単発往復 | ✅ Thinking 検出 12回・無音TOリセット機能、9秒で 39字取得 |
+| 2. **Claude リグレッション 10連続** | ✅ **10/10、175秒**。Phase 2 (18759c2) と完全一致＝claude.js 無変更の証拠 |
+| 3. **ChatGPT 10連続（Step4 核心）** | ✅ **10/10、234秒**。Thinking 毎回発火（9〜61回/iter）、`[C1]` 10/10 不発、レート制限なし |
+
+**持ち越し3点の判定（確定）**:
+1. aria-live 二重 render → **ChatGPT には無い**（10/10 `[C1]` 不発一貫）。
+   仕様書 v0.5 §12.1.3 に dedup 戦略差を明文化（claude=Y 主役 /
+   ChatGPT=dedup は保険）。誤検出回避も妥当（iter5 段落[32,92,27]字
+   を重複でないと正しく素通し）
+2. 安定化閾値 2500ms → **妥当**（全 iter 2664〜2682ms 一貫）
+3. bot 検知 → **chatgpt.com に常時ガード無し**（10連続 0 件）
+
+**既知の課題#6（Step4 で判明、Step4 完了に影響せず）**:
+完了マーカー「思考時間: XXX」が軽い Thinking では出ない（10/10 全て
+完了マーカー=false）。Step2（やや重い Thinking）では確認できた挙動。
+一次信号（stop-button 消滅）+ Thinking 検知で 10/10 成功するため
+問題なし。完了マーカーは補助であり必須でない。Phase 8 実戦投入で
+長文 Thinking 時に再観察。
+
+→ **Phase 3a Step4 完了。chatgpt.js は production ready。**
+次: Step1 fix4（Enter 送信 UX）→ fix4 確認後に Step6（プロンプト
+Spike テスト）/ Phase 3b（Gemini）/ main マージ の判断。
 
 ---
 

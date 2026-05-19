@@ -464,6 +464,44 @@ ChatGPT は選択モデルにより応答時間が大きく異なる。特に **
 3. bot 検知方式（Step2 採取で Cloudflare/reCAPTCHA の痕跡なし。
    汎用ガードのみ移植し検知時停止）
 
+#### 12.1.3 Step4 検証結果と dedup 戦略差（v0.5 Step4 追記）
+
+Phase 3a Step4（chatgpt.js 送信パイプライン）の動作確認
+（2026-05-19、GPT-5.5 Thinking、ChatGPT 10 連続テスト 10/10 成功、
+所要 234 秒）で、§12.1.2 の持ち越し 3 点を判定:
+
+1. **aria-live 二重 render: ChatGPT には無い（確定）**
+   - 10/10 で `[C1]`（dedup=Y）が一貫して発火せず。
+   - **claude.ai と ChatGPT で dedup 戦略が異なる**:
+     - claude.ai: 画面表示用 + スクリーンリーダー用の二重 render が
+       常時存在 → **Y(dedup) が主役**、X(二重判定) が補助
+       （Phase 2 で確立）
+     - ChatGPT: 二重 render 無し → **dedup は保険**（発火しないのが
+       正常）。完了検知は stop-button(testid) 消滅が主役
+   - 実装は両社で同一の dedup パイプラインを持つが「発火するのが
+     正常な社（claude）／発火しないのが正常な社（ChatGPT）」が
+     異なる。`[C1]` ログはこの差を観測可能にする観測点として残す。
+   - 誤検出回避の妥当性も確認（iteration 5 で段落 3 個
+     [32,92,27]字 が出たが、重複でないため統合せず正しく素通し）。
+2. **安定化閾値 2500ms: 妥当（確定）**
+   - 全 iteration で安定化所要 2664〜2682ms と一貫。claude.ai 実測値
+     がそのまま ChatGPT でも有効。
+3. **bot 検知: chatgpt.com に常時ガード無し（確定）**
+   - 10 連続で検知 0 件。汎用ガードは万一のため残置。
+
+**既知の課題（Step4 で判明、Step4 完了に影響せず）**:
+
+- **完了マーカー「思考時間: XXX」が軽い Thinking では出ない**:
+  Step2 採取（やや重い Thinking）では確認できたが、Step4 の
+  「こんにちは」級の軽い Thinking では 10/10 全てで未出現
+  （完了マーカー=false）。仮説: 軽い Thinking では省略される / UI
+  バージョン差。**問題なし** — 一次信号（stop-button 消滅）で完了
+  検知が機能し、Thinking 検知が無音タイムアウトをリセットするため
+  10/10 成功。完了マーカーは「あれば完了確証を強める補助」であり
+  必須ではない。Phase 8 実戦投入で長文 Thinking 時に再観察する。
+
+→ **Phase 3a Step4 完了**。chatgpt.js は production ready。
+
 ---
 
 ## 13. 残り未決事項
