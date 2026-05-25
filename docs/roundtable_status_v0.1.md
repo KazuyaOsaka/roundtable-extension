@@ -1,7 +1,7 @@
 # Roundtable プロジェクト 進捗サマリー
 
 **最終更新**: 2026-05-19
-**現在のフェーズ**: Phase 3a 完了（Step1-4 + fix1-5、Claude/ChatGPT 両社 10/10、production ready）→ main マージ / Step6 / Phase 3b 判断
+**現在のフェーズ**: Phase 3a 完全完了（main マージ済み 2a34617、Step6 ✅）→ Phase 3b（Gemini）着手
 
 ---
 
@@ -681,6 +681,54 @@ fix5 再テストの Claude 10 連続（399秒、Phase 2 完了時 175秒 の約
 仮説: Mac 環境負荷 / Chrome 拡張メモリ圧迫 / claude.ai サーバ側の一時遅延 /
 AutoLog 準備処理の稀なハング。ChatGPT 10連続（219秒）では発生せず＝Claude
 タブまたは Mac 側の問題と推測。Phase 8 実戦投入で再現するか観察。
+
+### Step5（E モード ChatGPT 拡張）について
+
+ロードマップ上の Step5「E モード ChatGPT 拡張 → 10連続」は、実装の
+自然な流れで **Step1（E を send_to_ai+target に追従）+ Step4（ChatGPT
+10/10 を E モードで検証）に吸収**された。独立 Step5 としての作業は
+発生せず、完了条件（ChatGPT 10連続 10/10）は Step4 で達成済み。
+
+### Step6: プロンプト Spike テスト（commit 予定）— ✅ 強く効いた
+
+**実施日**: 2026-05-25（Kazuya 実機、claude.ai 1 社）
+
+仕様書 §5 初回投入プロンプトを claude.ai に投入し、忖度なしの意見を
+求める問い 2 つ（「提携先拡大 vs プロダクト磨き込み、忖度なしで」/
+「最初の1年で何に集中すべきか、忖度なしで」）で検証。
+
+**判定: ✅ 完全合格**:
+- 率直に立場明示（「プロダクト磨き込み先行派」即答）
+- 異論・前提疑い（「やらないこと4つ」を明示的に NO、前提の数字を問い返す）
+- 無難な同意・両論併記の逃げ なし
+- Kazuya への確認質問あり（§5 通り）/ 他参加者（Gemini/ChatGPT）の
+  役割想定あり / 「あえて反対意見として置く」とメタ意識を言語化
+
+**核心仮説の実証**: 「忖度禁止プロトコルを与えれば AI は本音で議論する」
+→ claude.ai 1 社で実証。Claude は §5 を内面化・応用するレベルに到達。
+Phase 4 の 4 者ラウンドテーブル設計の確信度が大幅向上。
+
+**Phase 5 への示唆**: **匿名モード追加は不要**（プロトコルだけで十分効く）。
+ロードマップ Phase 5 の判断ポイント「合意一色なら匿名モード検討」は、
+現時点では発動不要の見込み。
+
+**注意（未検証）**: ChatGPT / Gemini で同じプロトコルが効くかは未検証。
+Phase 3b 完了後、3 社揃った段階で実際の Roundtable モードで再 Spike 推奨。
+
+---
+
+## 🎉 Phase 3a 完全完了サマリ
+
+**完了日**: 2026-05-25 / **main マージ**: commit 2a34617（push 済み）
+
+- **Step1**（ルーティング一般化、claude 無変更）+ fix（タブ表示）/
+  fix2（timeout 戦略 spec）/ fix3（バックストップ可変）/ fix4（Enter 送信）/
+  fix5（ProseMirror 改行注入検証式）
+- **Step2**（調査専用 chatgpt.js）/ **Step3**（採取解析）/
+  **Step4**（送信パイプライン Thinking-aware、両社 10/10）/
+  **Step5**（Step1+4 に吸収）/ **Step6**（プロンプト Spike ✅）
+- Claude / ChatGPT 両社 production ready。仕様書 v0.5 整備。
+- 残: **Phase 3b（Gemini）**。困難なら 2 社で Phase 4 へダウンスコープ。
 
 ---
 
