@@ -145,6 +145,23 @@ function getInputText(input) {
   return (input.innerText || input.textContent || "").replace(/[​-‍﻿]/g, "");
 }
 
+// Phase 3a fix5: 注入成否の検証専用の正規化。
+//   ProseMirror 系エディタは改行 \n を段落化するため、注入した
+//   "一行目\n二行目" がエディタ上では <p>一行目</p><p>二行目</p> となり、
+//   innerText は "一行目\n\n二行目"（二重 \n）になる。素の
+//   `.includes(text)` だと改行数の差で一致せず「注入失敗」と誤判定する。
+//   改行ランを 1 つに畳んで比較することで、改行を含むメッセージでも
+//   正しく「注入成功」と判定する。単行（\n 無し）には影響しない no-op。
+//   claude.js / chatgpt.js に同型で適用（Phase 3b 完了後の共通化で 1 箇所に）。
+function normalizeForInjectCheck(s) {
+  return (s || "").replace(/\r\n?/g, "\n").replace(/\n+/g, "\n").trim();
+}
+function injectionTextLanded(actual, expected) {
+  return normalizeForInjectCheck(actual).includes(
+    normalizeForInjectCheck(expected),
+  );
+}
+
 async function injectViaBeforeInput(input, text) {
   input.focus();
   await sleep(40);
@@ -159,7 +176,7 @@ async function injectViaBeforeInput(input, text) {
     await sleep(rand(30, 90));
   }
   await sleep(120);
-  return getInputText(input).includes(text);
+  return injectionTextLanded(getInputText(input), text);
 }
 
 async function injectViaPaste(input, text) {
@@ -174,7 +191,7 @@ async function injectViaPaste(input, text) {
   });
   input.dispatchEvent(evt);
   await sleep(150);
-  return getInputText(input).includes(text);
+  return injectionTextLanded(getInputText(input), text);
 }
 
 async function injectViaExecCommand(input, text) {
@@ -187,7 +204,7 @@ async function injectViaExecCommand(input, text) {
     ok = false;
   }
   await sleep(150);
-  return ok && getInputText(input).includes(text);
+  return ok && injectionTextLanded(getInputText(input), text);
 }
 
 const INJECT_METHODS = [

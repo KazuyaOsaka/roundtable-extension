@@ -277,6 +277,19 @@ function initChatgptContentScript() {
     );
   }
 
+  // Phase 3a fix5: 注入成否の検証専用の正規化（claude.js と同型）。
+  //   ProseMirror が改行 \n を段落化し innerText が "一行目\n\n二行目" に
+  //   なると素の `.includes(text)` が改行数差で false になり「注入失敗」と
+  //   誤判定する。改行ランを 1 つに畳んで比較。単行には影響しない no-op。
+  function normalizeForInjectCheck(s) {
+    return (s || "").replace(/\r\n?/g, "\n").replace(/\n+/g, "\n").trim();
+  }
+  function injectionTextLanded(actual, expected) {
+    return normalizeForInjectCheck(actual).includes(
+      normalizeForInjectCheck(expected),
+    );
+  }
+
   async function injectViaBeforeInput(input, text) {
     input.focus();
     await sleep(40);
@@ -292,7 +305,7 @@ function initChatgptContentScript() {
       await sleep(rand(30, 90));
     }
     await sleep(120);
-    return getInputText(input).includes(text);
+    return injectionTextLanded(getInputText(input), text);
   }
 
   async function injectViaPaste(input, text) {
@@ -308,7 +321,7 @@ function initChatgptContentScript() {
       }),
     );
     await sleep(150);
-    return getInputText(input).includes(text);
+    return injectionTextLanded(getInputText(input), text);
   }
 
   async function injectViaExecCommand(input, text) {
@@ -321,7 +334,7 @@ function initChatgptContentScript() {
       ok = false;
     }
     await sleep(150);
-    return ok && getInputText(input).includes(text);
+    return ok && injectionTextLanded(getInputText(input), text);
   }
 
   const INJECT_METHODS = [
