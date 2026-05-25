@@ -1,7 +1,7 @@
 # Roundtable プロジェクト 進捗サマリー
 
 **最終更新**: 2026-05-19
-**現在のフェーズ**: Phase 3a 進行中（Step1-4 完了、chatgpt.js production ready → Step1 fix4 / Step6 / Phase 3b 判断）
+**現在のフェーズ**: Phase 3a 完了（Step1-4 + fix1-5、Claude/ChatGPT 両社 10/10、production ready）→ main マージ / Step6 / Phase 3b 判断
 
 ---
 
@@ -623,8 +623,64 @@ Thinking 検知（思考中+loading-shimmer、無音TOリセット）。
 長文 Thinking 時に再観察。
 
 → **Phase 3a Step4 完了。chatgpt.js は production ready。**
-次: Step1 fix4（Enter 送信 UX）→ fix4 確認後に Step6（プロンプト
-Spike テスト）/ Phase 3b（Gemini）/ main マージ の判断。
+
+### Step1 fix4: Enter 送信 / Shift+Enter 改行（commit f4be43d）
+
+**完了日**: 2026-05-19（Kazuya 確認）
+
+メインのメッセージ欄(#message)を「Enter=送信 / Shift+Enter=改行」に。
+各社チャット標準動作に合わせる。E モード textarea は「1行1メッセージ」が
+本質なので Enter=改行のまま据え置き（意図的に対象外）。IME 変換確定の
+Enter は isComposing/keyCode 229 で除外。影響は side_panel のみ。
+
+**動作確認**: Enter 送信 ✅ / Shift+Enter 改行 ✅ / IME 確定で誤送信なし ✅ /
+E モード非回帰 ✅。
+
+### fix5: 改行注入の検証式バグ修正（commit 72ed790）
+
+**発見**: fix4 で Shift+Enter 改行を提供した直後、改行を含むメッセージで
+注入 3 手段が一律「失敗」する想定外バグを発見（claude.js / chatgpt.js
+両方）。立ち止まって Kazuya 切り分けテスト実施。
+
+**原因（確定）**: ProseMirror 系エディタが \n を段落化し、注入は視覚的に
+成功しているのに innerText が "一行目\n\n二行目"（二重 \n）になるため、
+検証式 `getInputText(input).includes(text)` が改行数差で false を返す。
+3 手段一律失敗 = 個別注入バグではなく共通の検証ロジックが原因。
+（Phase 1/2 で単行しかテストしておらず見逃していた）
+
+**修正**: 検証専用の `normalizeForInjectCheck`（改行ランを 1 つに畳む）+
+`injectionTextLanded` を両ファイルに同型追加し、各注入メソッドの最終比較を
+置換。単行（\n 無し）には影響しない no-op。
+
+**重要な状態変化**: 本 fix で **Phase 3a で初めて claude.js を変更**
+（バグが両社共通＝検証式が両ファイルにあるため）。「claude.js 無変更＝
+リグレッション源なし」の保証は外れたため、再テストで Claude 10 連続を必須確認。
+
+**動作確認（2026-05-25、Kazuya 実機、全 ✅）**:
+
+| テスト | 結果 |
+|---|---|
+| 1. Claude 単行 | ✅ 45字応答 |
+| 2. **Claude 改行あり** | ✅ Claude が「改行が反映されている」と明示確認（fix5 決定的証拠） |
+| 3. ChatGPT 単行 | ✅ |
+| 4. **ChatGPT 改行あり** | ✅ オウム返しで改行再現 |
+| 5. **Claude 10連続（claude.js 変更後のリグレッション）** | ✅ **10/10、399秒**。Phase 2 挙動を完全維持 |
+| 6. ChatGPT 10連続 | ✅ **10/10、219秒** |
+
+17:20:39 の「AutoLog まで止まる」現象は fix5 後 **再現せず**。
+
+→ **fix5 完了 / Step4 完全完了 / Phase 3a Step1-4 + fix1-5 完了。**
+
+### 既知の課題#7: Claude 10連続で稀に発生する100秒級遅延（2026-05-25 観察、対応不要・要観察）
+
+fix5 再テストの Claude 10 連続（399秒、Phase 2 完了時 175秒 の約2倍）で、
+2 つの iteration に「注入処理開始までの長い沈黙」を観察:
+- iteration 4: AutoLog 開始後 99 秒して `[Inject]` 行が出る
+- iteration 7: 同様に 70 秒後
+最終的に注入は成功し 10/10 達成。**fix5 のバグではない**（最終的に正常完了）。
+仮説: Mac 環境負荷 / Chrome 拡張メモリ圧迫 / claude.ai サーバ側の一時遅延 /
+AutoLog 準備処理の稀なハング。ChatGPT 10連続（219秒）では発生せず＝Claude
+タブまたは Mac 側の問題と推測。Phase 8 実戦投入で再現するか観察。
 
 ---
 

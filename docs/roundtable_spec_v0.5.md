@@ -502,6 +502,24 @@ Phase 3a Step4（chatgpt.js 送信パイプライン）の動作確認
 
 → **Phase 3a Step4 完了**。chatgpt.js は production ready。
 
+#### 12.1.4 ProseMirror 改行注入の検証式（v0.5 fix5 追記・既知パターン）
+
+**後続開発者向けの注意**: claude.ai / chatgpt.com の入力欄はいずれも
+ProseMirror 系 rich editor。改行を含むテキストを注入すると、エディタは
+`\n` を段落 `<p>` に変換するため、`innerText` は段落間が **二重 `\n`** に
+なる（注入した "一行目\n二行目" → エディタ上 innerText "一行目\n\n二行目"）。
+
+このため、注入成否を素の `getInputText(input).includes(text)` で判定すると、
+**注入は視覚的に成功しているのに改行数の差で false（注入失敗）と誤判定**する。
+Phase 3a fix5 で `normalizeForInjectCheck`（`\r\n?`→`\n`、`\n+`→`\n`、trim）で
+改行ランを畳んでから比較する `injectionTextLanded` に置換して解決した。
+
+- 単行テキスト（`\n` 無し）には影響しない no-op。
+- claude.js / chatgpt.js に同型実装（Phase 3b 完了後の共通化で 1 箇所に集約予定）。
+- 注入メソッド自体（beforeinput / clipboard-paste / execCommand）は変更
+  不要だった＝問題は「注入」ではなく「検証」にあった。新社対応時も
+  この検証パターンを最初から使うこと。
+
 ---
 
 ## 13. 残り未決事項
