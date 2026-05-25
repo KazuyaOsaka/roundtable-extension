@@ -14,6 +14,7 @@
 const AI_TARGET_META = {
   claude: { label: "Claude", site: "claude.ai", emoji: "🟧" },
   chatgpt: { label: "ChatGPT", site: "chatgpt.com", emoji: "🟩" },
+  gemini: { label: "Gemini", site: "gemini.google.com", emoji: "🟨" },
 };
 const DEFAULT_TARGET = "claude";
 
@@ -164,6 +165,20 @@ function formatTabLabel(tab, targetKey) {
     const titleShort =
       title.length > 44 ? title.slice(0, 41) + "…" : title;
     return `${marker}${titleShort}  · ${chatgptUrlHint(pathname)}`;
+  }
+
+  if (targetKey === "gemini") {
+    // Gemini もタイトル優先。URL 構造（/app, /app/<id>, /gem/<id> 等）は
+    // Phase 3b Step1 採取で確定するまで暫定の短縮表示。FB で反復前提。
+    let title = rawTitle.replace(/\s*[-|｜]\s*Gemini\s*$/i, "").trim();
+    const isNew = pathname === "/" || /^\/app\/?$/.test(pathname);
+    if (!title || /^gemini$/i.test(title)) {
+      title = isNew ? "新規チャット" : "(Untitled)";
+    }
+    const titleShort = title.length > 44 ? title.slice(0, 41) + "…" : title;
+    let hint = isNew ? "新規チャット" : shortenPath(pathname);
+    if (hint.length > 20) hint = hint.slice(0, 18) + "…";
+    return `${marker}${titleShort}  · ${hint}`;
   }
 
   // Claude（既存挙動を維持）
