@@ -1,7 +1,7 @@
 # Roundtable プロジェクト 進捗サマリー
 
-**最終更新**: 2026-05-19
-**現在のフェーズ**: Phase 3a 完全完了（main マージ済み 2a34617、Step6 ✅）→ Phase 3b（Gemini）着手
+**最終更新**: 2026-05-26
+**現在のフェーズ**: Phase 3b（Gemini）Step1/Step1b/Step2 完了 ✅ → Step3（送信パイプライン）着手
 
 ---
 
@@ -23,7 +23,7 @@
 | 0 | 環境準備（拡張の骨格） | ✅ 完了（commit ddd83b5） |
 | 1 | Claudeタブで1往復（PoC） | ✅ 完了（commit 2bda463） |
 | 2 | DOM操作の堅牢化 | ✅ 完了（commit 68bd150、10/10 連続成功達成） |
-| 3 | 3社対応 | 🚧 Phase 3a: ChatGPT Step1-4 完了（production ready）/ Phase 3b Gemini 未着手 |
+| 3 | 3社対応 | 🚧 Phase 3a: Claude/ChatGPT production ready / Phase 3b Gemini: Step1+Step2 完了（DOM 解析確定）、Step3 送信パイプライン未実装 |
 | 4 | 議論履歴共有とターン制御 | 未着手 |
 | 5 | システムプロンプト整備 | 未着手 |
 | 6 | UI整備 | 未着手 |
@@ -729,6 +729,91 @@ Phase 3b 完了後、3 社揃った段階で実際の Roundtable モードで再
   **Step5**（Step1+4 に吸収）/ **Step6**（プロンプト Spike ✅）
 - Claude / ChatGPT 両社 production ready。仕様書 v0.5 整備。
 - 残: **Phase 3b（Gemini）**。困難なら 2 社で Phase 4 へダウンスコープ。
+
+---
+
+## Phase 3b 進捗ログ（Gemini）
+
+**作業ブランチ**: feature/phase3b-gemini（main 2a34617 から派生）
+
+### Step1: routing 一般化 + 調査専用 gemini.js（commit 71d7ba6）
+
+**完了日**: 2026-05-26
+
+Phase 3a Step1 で routing は target 化済みのため、Gemini 追加は最小:
+
+| ファイル | 変更 |
+|---|---|
+| background.js | `AI_TARGETS.gemini`（urlPrefix/urlMatch/script/`send_to_gemini`）追加（+7 行、追加のみ） |
+| side_panel.html/js | 🟨 Gemini セレクタ + タブ表示ロジック（URL ノイズ `/app`,`/gem/<id>` 除去）（+16 行） |
+| manifest.json | Phase 0 から gemini 登録済み（**無変更**） |
+| gemini.js | 二重ロードガード + ping + 手動 DOM ロガー + 構造スナップショット。`send_to_gemini` は notImplemented |
+
+**リグレッション安全性**: `git diff main..HEAD -- claude.js chatgpt.js` 空＝**両ファイル完全無変更（バイト一致）**。
+
+### Step1 + ping 動作確認（2026-05-26、Kazuya 実機）
+
+| テスト | 結果 |
+|---|---|
+| A. Claude リグレッション | ✅ 35字往復、`fallback:retry-ancestor-depth-5`、dedup 正常発火。Phase 3a 挙動完全一致 |
+| A. ChatGPT リグレッション | ✅ 23字往復、Thinking 12 回検出、dedup 不発。Step4 挙動完全一致 |
+| B. Gemini ping | ✅ content_script 到達（`https://gemini.google.com/app?hl=ja`） |
+
+→ routing に gemini 追加でも既存2社が無傷である客観確認。
+
+### Step1b: ストリーミングスナップショット強化（調査専用、本番影響ゼロ）
+
+初回 DOM 採取で**停止ボタン・思考表示が完全空振り**。根本原因 = 手動 DOM
+ロガーの MutationObserver が `childList` のみ監視で、Gemini（Angular）の
+**characterData ストリーム + 属性/クラス切替**を拾えない（送信⇔停止・思考は
+ノード入替ではなく属性変化）。対策として gemini.js に**生成中の DOM 状態を
+間隔ポーリング採取する `stream_snapshots`**（t=2〜30秒で10枚）を追加 +
+最終スナップショットの thinking プローブを **class 対応**化。`send_to_gemini`
+は notImplemented 維持＝Claude/ChatGPT・本番挙動への影響ゼロ。
+
+**ツールの学び**: childList-only observer は SPA の属性/characterData 駆動
+UI（ストリーミング本文・状態トグル）を構造的に採取不能。生成中の
+間隔スナップショットで補完するのが定石。
+
+### Step2 採取・解析 — 完全クローズ ✅（2026-05-26、Kazuya 2回採取）
+
+**採取条件**: Gemini 3.5 Flash 思考拡張、「91 と 97 と 119、それぞれ素数か
+理由とともに判定」、Show thinking 展開済みで 60 秒終了、stream_snapshots 10 枚。
+
+**確定セレクタ（claude.ai より堅牢: data-test-id + Web Component + aria の三重）**:
+
+| 用途 | セレクタ |
+|---|---|
+| 入力欄 | `rich-textarea .ql-editor[role="textbox"]`（aria「Gemini へのプロンプトを入力」）。**Quill エディタ** |
+| 送信 | `[data-test-id="send-button-container"] button[aria-label="プロンプトを送信"]` |
+| 停止 | 同コンテナ内 `button[aria-label="回答を停止"]`（**送信⇔停止が同一ノードで aria 切替＝ChatGPT 型**） |
+| 応答抽出 | **最後の `model-response` 内 `.markdown-main-panel`**（「Gemini の回答」プレフィックス無し） |
+| 思考(live) | `[data-test-id="thinking-overlay-content"]` / `.thinking-dots-animation` / `.thinking-container`（英語ヘッドライン "Analyzing…"）+ 応答に `.has-thoughts` |
+| モデル表示 | `[data-test-id="bard-mode-menu-button"]`（text「Flash 拡張」、§7 metadata.model） |
+
+**重要発見**:
+1. **停止ボタン = `回答を停止`**（stream_snapshots で t=10〜20 秒の生成中のみ出現を実証）。childList observer の死角だったが間隔 SS で確定。
+2. **思考検知を Gemini で達成**（Phase 2「Thinking 回収点」）: 生成中に
+   `thinking-overlay-content` / `thinking-dots-animation` が出現。無音 TO
+   リセットに使える（仕様書 §12.1.1 戦略が 3 社目でも成立）。
+   なお `<model-thoughts>` 要素は**存在しない**（当初仮説は誤り、データで訂正）。
+3. **dedup = 保険（ChatGPT 同型）**: 完了応答は `aria-live="off"`、最新のみ
+   `polite`、cdk-announcer は空。本文の常時二重 render 無し（Claude と異なる）。
+   → 抽出は**最後の** `.markdown-main-panel` をピンポイント。
+4. **完了検知**: 停止ボタン「回答を停止」出現→消滅（claude/chatgpt と同型）
+   + A1 安定化。⚠ `response-footer.complete` は会話内の過去ターンで
+   document 全体が汚染されるため、**最後の model-response にスコープ**すること。
+5. **Quill エディタ**（`.ql-editor`）。Claude(TipTap)/ChatGPT(ProseMirror) と
+   別系統 → **Step3 で fix5 の改行二重化が Quill で再発しないか要重点検証**。
+6. **bot 検知**: recaptcha/cloudflare とも false（chatgpt.com 同様、常時ガード無し）。
+
+**採取データ**: `docs/gemini_domlog.json`（141 events + stream_snapshots 10）/
+`docs/gemini_snapshot.json`（構造スナップショット）。調査記録。
+
+**ピボット評価**: リスク低。Gemini DOM は三重アンカーで堅牢、思考検知も実証。
+**2 社ダウンスコープは不要、Phase 3b 続行**。
+
+→ **Step3（gemini.js 送信パイプライン: 注入/送信/応答抽出 + Thinking-aware）へ。**
 
 ---
 

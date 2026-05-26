@@ -10,6 +10,14 @@
 //     - Gemini 構造スナップショット（ロガー停止時に自動採取して
 //       assistant_snapshot_* に保存。Kazuya は claude/chatgpt と同手順）
 //
+//   Step1b 強化（思考表示の確定用）:
+//     childList observer は Gemini の characterData ストリーム/属性切替を
+//     拾えず、初回採取で停止ボタン・Show thinking が完全に空振りした。
+//     対策として「ストリーミングスナップショット」を生成中に間隔ポーリング
+//     採取し（dom_log.stream_snapshots に格納）、停止ボタンの現在状態 /
+//     <model-thoughts> / 思考系クラスを可視化する。送信パイプラインは
+//     依然 notImplemented（Step3 送り）＝本番挙動・他社への影響はゼロ。
+//
 //   含まないもの（意図的、Step3 送り）:
 //     - 送信パイプライン（注入 / 送信 / 応答抽出）
 //     send_to_gemini は notImplemented を明示返却する。
@@ -65,17 +73,27 @@ function initGeminiContentScript() {
   const DOM_LOG_COUNTDOWN_STEP_MS = 10000;
   const DOM_LOG_TEXT_LIMIT = 40;
 
+  // Step1b: childList observer は Gemini の characterData ストリーム/属性切替を
+  // 拾えない（停止ボタン・思考表示が見えない）ため、生成中の DOM 状態を
+  // 一定間隔で「ストリーミングスナップショット」として採取する。
+  const STREAM_SNAPSHOT_TIMES_MS = [
+    2000, 4000, 6000, 8000, 10000, 13000, 16000, 20000, 25000, 30000,
+  ];
+
   const DOM_LOG_CANDIDATE_SELECTOR = [
     "button",
     "[role='button']",
     "message-content",
     "model-response",
+    "model-thoughts", // Step1b: Show thinking パネル（Web Component）
+    "structured-content-container", // Step1b: processing-state-visible を持つ本文ラッパ
     "user-query",
     "[data-message-id]",
     "[data-test-id]",
     "[aria-live]",
     "rich-textarea",
     ".ql-editor",
+    "[class*='thought']", // Step1b: 思考系クラス（has-thoughts 等）
     "div[class*='response']",
     "div[class*='message']",
   ].join(",");
@@ -86,14 +104,18 @@ function initGeminiContentScript() {
     if (tag === "button" || node.getAttribute("role") === "button")
       return "button";
     // Gemini は Web Components（message-content / model-response / user-query）
+    if (tag === "model-thoughts") return "thinking:model-thoughts"; // Step1b
     if (tag === "model-response") return "response:model-response";
     if (tag === "message-content") return "response:message-content";
+    if (tag === "structured-content-container")
+      return "response:structured-content"; // Step1b
     if (tag === "user-query") return "response:user-query";
     if (node.hasAttribute("data-message-id")) return "response:data-message-id";
     if (node.hasAttribute("aria-live")) return "aria-live";
     if (tag === "rich-textarea") return "composer:rich-textarea";
     const cls = node.getAttribute("class") || "";
     if (/ql-editor/.test(cls)) return "composer:ql-editor";
+    if (/thought|thinking/i.test(cls)) return "thinking:class"; // Step1b
     if (/response/i.test(cls)) return "response:class-response";
     if (/message/i.test(cls)) return "response:class-message";
     return null;
@@ -132,6 +154,8 @@ function initGeminiContentScript() {
     observer: null,
     countdownTimer: null,
     endTimer: null,
+    streamSnapshots: [], // Step1b: 生成中の DOM 状態サンプル列
+    streamTimers: [],
     _recordOne(node, type) {
       const cat = classifyDomNode(node);
       if (!cat) return;
@@ -161,6 +185,19 @@ function initGeminiContentScript() {
       this.startTime = performance.now();
       this.events = [];
       this.truncated = false;
+      this.streamSnapshots = [];
+      // Step1b: 生成中の DOM 状態を一定間隔で採取（停止ボタン・思考表示が
+      // 属性/characterData 変化のため childList observer では見えないので）。
+      this.streamTimers = STREAM_SNAPSHOT_TIMES_MS.map((t) =>
+        setTimeout(() => {
+          if (!this.running) return;
+          try {
+            this.streamSnapshots.push(captureStreamingProbe(this.startTime));
+          } catch (e) {
+            /* probe 失敗は無視（採取継続） */
+          }
+        }, t),
+      );
       this.observer = new MutationObserver((mutations) => {
         for (const m of mutations) {
           for (const n of m.addedNodes) this._recordSubtree(n, "added");
@@ -209,6 +246,8 @@ function initGeminiContentScript() {
         clearTimeout(this.endTimer);
         this.endTimer = null;
       }
+      for (const t of this.streamTimers) clearTimeout(t);
+      this.streamTimers = [];
       const result = {
         captured_at: new Date().toISOString(),
         url: window.location.href,
@@ -216,6 +255,8 @@ function initGeminiContentScript() {
         duration_ms: DOM_LOG_DURATION_MS,
         event_count: this.events.length,
         truncated: this.truncated,
+        stream_snapshot_count: this.streamSnapshots.length, // Step1b
+        stream_snapshots: this.streamSnapshots, // Step1b: 生成中の状態サンプル
         events: this.events,
       };
       const key = `dom_log_${Date.now()}`;
@@ -223,7 +264,7 @@ function initGeminiContentScript() {
         await chrome.storage.local.set({ [key]: result });
         logPanel(
           "ok",
-          `[DOM] 終了。storage["${key}"] に保存（${result.event_count} 件、truncated=${result.truncated}）`,
+          `[DOM] 終了。storage["${key}"] に保存（${result.event_count} 件、ストリーミングSS ${result.stream_snapshot_count} 枚、truncated=${result.truncated}）`,
         );
       } catch (e) {
         logPanel(
@@ -291,11 +332,105 @@ function initGeminiContentScript() {
   }
 
   const THINKING_TEXT_RE =
-    /思考|考えています|Show thinking|Thinking|Reasoning|推論|処理中/i;
+    /思考|考え|Show thinking|Hide thinking|Thinking|Reasoning|推論|処理中/i;
   const THINKING_ATTR_RE = /thinking|reasoning|reason|thought/i;
   const MODEL_TEXT_RE =
     /\b(gemini|2\.5|2\.0|1\.5|flash|pro|advanced|nano|ultra|thinking)\b/i;
   const STOP_ATTR_RE = /stop|cancel|停止|中止|生成を停止|応答を停止/i;
+
+  // ============================================================
+  // Step1b: ストリーミングスナップショット（生成中の DOM 状態を軽量採取）
+  //   childList observer の死角（停止ボタンの属性切替・思考表示の
+  //   characterData ストリーム）を、間隔ポーリングで可視化する。
+  // ============================================================
+  function captureStreamingProbe(startTime) {
+    const t_ms = Math.round(performance.now() - startTime);
+
+    // 生成中/完了を表すクラス系マーカー（snapshot で確定した手掛かり）
+    const markers = {
+      markdown_animate: !!document.querySelector(".markdown-main-panel.animate"),
+      processing_state_visible: !!document.querySelector(
+        "[class*='processing-state-visible']",
+      ),
+      response_footer_complete: !!document.querySelector(
+        ".response-footer.complete",
+      ),
+      has_thoughts: !!document.querySelector("[class*='has-thoughts']"),
+      model_thoughts_present: !!document.querySelector("model-thoughts"),
+    };
+
+    // 思考パネル（Web Component）
+    const model_thoughts = [];
+    document
+      .querySelectorAll("model-thoughts")
+      .forEach((el) => model_thoughts.push(describeEl(el)));
+
+    // 思考系クラスを持つ要素（has-thoughts / *thinking* / *thought*）
+    const thinking_by_class = [];
+    document
+      .querySelectorAll("[class*='thought'],[class*='thinking']")
+      .forEach((el) => {
+        if (thinking_by_class.length < 20)
+          thinking_by_class.push(describeEl(el));
+      });
+
+    // Show thinking トグル等、思考を示すテキスト/aria のボタン
+    const thinking_buttons = [];
+    document.querySelectorAll("button,[role='button']").forEach((b) => {
+      const al = b.getAttribute("aria-label") || "";
+      const tx = (b.innerText || b.textContent || "").trim();
+      if (
+        THINKING_TEXT_RE.test(al) ||
+        (tx.length > 0 && tx.length <= 40 && THINKING_TEXT_RE.test(tx))
+      )
+        thinking_buttons.push({
+          aria_label: al || null,
+          text_head: tx.slice(0, 40),
+          data_test_id: b.getAttribute("data-test-id") || null,
+        });
+    });
+
+    // 送信⇔停止が切り替わる composer 内のボタン（永続ノードの現在状態）
+    const composer_buttons = [];
+    document
+      .querySelectorAll(
+        "[data-test-id='send-button-container'] button,[data-test-id='send-button-container'] [role='button']",
+      )
+      .forEach((b) => {
+        const ic = b.querySelector("mat-icon,[class*='icon']");
+        composer_buttons.push({
+          aria_label: b.getAttribute("aria-label") || null,
+          data_test_id: b.getAttribute("data-test-id") || null,
+          disabled: !!b.disabled,
+          mat_icon: ic ? (ic.textContent || "").trim().slice(0, 24) : null,
+          class: (b.getAttribute("class") || "").slice(0, 80),
+        });
+      });
+
+    // 停止系の語にマッチするボタン（生成中のみ出る想定）
+    const stop_like = [];
+    document.querySelectorAll("button,[role='button']").forEach((b) => {
+      const al = b.getAttribute("aria-label") || "";
+      const dt = b.getAttribute("data-test-id") || "";
+      const tx = (b.innerText || b.textContent || "").trim();
+      if (STOP_ATTR_RE.test(al) || STOP_ATTR_RE.test(dt) || STOP_ATTR_RE.test(tx))
+        stop_like.push({
+          aria_label: al || null,
+          data_test_id: dt || null,
+          text_head: tx.slice(0, 30),
+        });
+    });
+
+    return {
+      t_ms,
+      markers,
+      composer_buttons,
+      stop_like,
+      model_thoughts,
+      thinking_buttons,
+      thinking_by_class,
+    };
+  }
 
   function snapshotGeminiStructure() {
     const candidates = [];
@@ -366,18 +501,29 @@ function initGeminiContentScript() {
       .map((b) => describeEl(b));
 
     const thinking_candidates = [];
+    // Step1b: model-thoughts Web Component を最優先で採取
     document
-      .querySelectorAll("[aria-label],[data-test-id],button,div,span")
+      .querySelectorAll("model-thoughts")
+      .forEach((el) =>
+        thinking_candidates.push(describeEl(el, { match: "model-thoughts" })),
+      );
+    // Step1b: aria-label / data-test-id / class / 短文 のいずれかが思考系
+    document
+      .querySelectorAll("[aria-label],[data-test-id],[class],button,div,span")
       .forEach((el) => {
         const al = el.getAttribute("aria-label") || "";
         const dt = el.getAttribute("data-test-id") || "";
+        const cls = el.getAttribute("class") || "";
         const tx = (el.innerText || el.textContent || "").trim();
-        const attrHit = THINKING_ATTR_RE.test(al) || THINKING_ATTR_RE.test(dt);
+        const attrHit =
+          THINKING_ATTR_RE.test(al) ||
+          THINKING_ATTR_RE.test(dt) ||
+          THINKING_ATTR_RE.test(cls);
         const textHit =
           tx.length > 0 && tx.length <= 40 && THINKING_TEXT_RE.test(tx);
-        if (attrHit || textHit)
+        if ((attrHit || textHit) && thinking_candidates.length < 40)
           thinking_candidates.push(
-            describeEl(el, { match: attrHit ? "attr" : "text" }),
+            describeEl(el, { match: attrHit ? "attr/class" : "text" }),
           );
       });
 
