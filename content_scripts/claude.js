@@ -589,18 +589,28 @@ function trimTrailingDedupMarkers(s) {
 }
 
 const ASSISTANT_RETRY_LABELS = ["Retry", "再試行", "Regenerate", "再生成"];
+// 新戦略3（action-bar 祖先）で「本文を採れた」と見なす最小文字数。これ未満は
+// ツールバーのアイコン由来ゴミ（2026-05-27 の depth=0,1字 事故）とみなして
+// 不採用 → 失敗扱いに落とす（戦略4 → 最終 null → スナップショット保存を発火）。
+// 実応答は通常これを大きく上回るので短文応答も壊さない。
+const MIN_ASSISTANT_CHARS = 2;
 
 function extractLatestAssistantMessage() {
   // Phase 2 C3: 抽出メタデータを構造化して返す。
   // 呼出側で W1〜W4 警告判定や将来の集計（連続テストモード）に使う。
   // - retry_hit_count: 全 aria-label 横断で見つかった Retry ボタン総数
-  //   （0 なら W4: aria-label セット全滅）
   // - retry_aria_label_matched: 最初にヒットした Retry の aria-label
-  // - retry_ancestor_depth: 戦略 3 が成功した場合の depth
+  // - retry_ancestor_depth: 旧戦略3 の depth（互換のため残置、新方式では未使用）
+  // - action_bar_anchor: 新戦略3 が使ったアンカー種別（testid or aria-label）
+  // - action_bar_hit_count: action-bar-* testid の総数（W4 のアンカー全滅判定用）
+  // - assistant_turn_depth: 新戦略3 で採用した「応答ターン祖先」の depth
   const meta = {
     retry_hit_count: 0,
     retry_aria_label_matched: null,
     retry_ancestor_depth: null,
+    action_bar_anchor: null,
+    action_bar_hit_count: 0,
+    assistant_turn_depth: null,
   };
   for (const label of ASSISTANT_RETRY_LABELS) {
     const cnt = document.querySelectorAll(
@@ -654,36 +664,68 @@ function extractLatestAssistantMessage() {
     }
   }
 
-  // 戦略3: Retry ボタンの祖先（現状の claude.ai で確認された実経路）
-  //  - button[aria-label="Retry"] は Claude 応答にのみ存在、user-message には無い
-  //  - 最後の Retry ボタンを起点に、user-message を含まない最近接の祖先を取る
-  if (meta.retry_aria_label_matched) {
-    const found = document.querySelectorAll(
+  // 戦略3: アクションバー（コピー/再試行）を起点に応答ターン全体を取る。
+  //  2026-05-27 の claude.ai DOM 変更で、旧「Retry 祖先を上にたどり最初に
+  //  1 字以上ある祖先」方式が depth=0 のツールバー（アイコンのみ、1 字）で
+  //  誤打ち切りしていた（既知の課題#3 の現実化）。対策:
+  //   (a) 起点を data-testid="action-bar-retry"/"action-bar-copy"（言語非依存で
+  //       堅い）を最優先、無ければ従来の aria-label 再試行ボタンにフォールバック。
+  //   (b) 「最初に 1 字以上」ではなく「user-message を含まない最高位の祖先」
+  //       ＝応答ターン全体を採る。祖先は入れ子で innerText が単調増加するため
+  //       これは実質「テキスト最大の祖先」。本文込みの親は必ずツールバー単体
+  //       より文字数が多いので 1 字ゴミは自然に除外され、短文応答も壊さない
+  //       （閾値マジックナンバー不要）。
+  //   (c) 採用テキストが MIN_ASSISTANT_CHARS 未満なら本文未発見として不採用
+  //       → 戦略4 / 最終 null へ落とす（スナップショット保存を発火＝副次バグ修正）。
+  const actionBarRetry = document.querySelectorAll(
+    '[data-testid="action-bar-retry"]',
+  );
+  const actionBarCopy = document.querySelectorAll(
+    '[data-testid="action-bar-copy"]',
+  );
+  meta.action_bar_hit_count = actionBarRetry.length + actionBarCopy.length;
+
+  let anchorEls = null;
+  if (actionBarRetry.length > 0) {
+    anchorEls = actionBarRetry;
+    meta.action_bar_anchor = '[data-testid="action-bar-retry"]';
+  } else if (actionBarCopy.length > 0) {
+    anchorEls = actionBarCopy;
+    meta.action_bar_anchor = '[data-testid="action-bar-copy"]';
+  } else if (meta.retry_aria_label_matched) {
+    anchorEls = document.querySelectorAll(
       `button[aria-label="${meta.retry_aria_label_matched}"]`,
     );
-    const retryButtons = Array.from(found);
-    if (retryButtons.length > 0) {
-      const lastRetry = retryButtons[retryButtons.length - 1];
-      let cur = lastRetry.parentElement;
-      for (let depth = 0; depth < 10 && cur; depth++) {
-        if (cur.querySelector('[data-testid="user-message"]')) {
-          cur = cur.parentElement;
-          continue;
-        }
-        const raw = cur.innerText || "";
-        const { text, dedup, diagnostic } = cleanAssistantText(raw);
-        if (text.length >= 1 && cur.contains(lastRetry)) {
-          meta.retry_ancestor_depth = depth;
-          return {
-            text,
-            selector: `fallback:retry-ancestor-depth-${depth}`,
-            raw_length: raw.length,
-            dedup,
-            diagnostic,
-            extractionMeta: meta,
-          };
-        }
-        cur = cur.parentElement;
+    meta.action_bar_anchor = `aria-label:${meta.retry_aria_label_matched}`;
+  }
+
+  if (anchorEls && anchorEls.length > 0) {
+    const anchor = anchorEls[anchorEls.length - 1];
+    // 起点から上へ、user-message を含まない最高位の祖先（応答ターン全体）を探す。
+    let best = null;
+    let bestDepth = -1;
+    let cur = anchor;
+    for (let depth = 0; cur && depth < 15; depth++) {
+      if (cur.querySelector && cur.querySelector('[data-testid="user-message"]')) {
+        break; // ここから上は user 発言を含む → 行き過ぎ
+      }
+      best = cur;
+      bestDepth = depth;
+      cur = cur.parentElement;
+    }
+    if (best) {
+      const raw = best.innerText || "";
+      const { text, dedup, diagnostic } = cleanAssistantText(raw);
+      if (text && text.length >= MIN_ASSISTANT_CHARS) {
+        meta.assistant_turn_depth = bestDepth;
+        return {
+          text,
+          selector: `fallback:action-bar-ancestor-depth-${bestDepth}`,
+          raw_length: raw.length,
+          dedup,
+          diagnostic,
+          extractionMeta: meta,
+        };
       }
     }
   }
@@ -1097,19 +1139,21 @@ async function performSend(text, settings = {}) {
     );
   }
 
-  // W2: 戦略 3 の depth >= 7 → 階層変化の兆候 (warn)
-  // 2026-05-15 検証で「現状 depth=5 が常態」と判明。それより 2 段深い
-  // ケースを「DOM 階層が変わった可能性」として警告する閾値とする。
-  if (
-    sel.startsWith("fallback:retry-ancestor-depth-") &&
-    meta.retry_ancestor_depth !== null &&
-    meta.retry_ancestor_depth >= 7
-  ) {
-    firedWarnings.push("W2");
+  // W2: 新戦略3（action-bar 祖先）使用時の観測ログ。2026-05-27 の DOM 変更で
+  // 旧 depth 基準（depth=5 が常態）は無効化。新方式の常態 depth が固まるまでは
+  // anchor と depth を info で可視化し、cap 近く（深すぎ）のときだけ warn。
+  if (sel.startsWith("fallback:action-bar-ancestor-depth-")) {
     logPanel(
-      "warn",
-      `[C3:W2] ⚠ Retry 祖先が深い (depth=${meta.retry_ancestor_depth})。DOM 階層変化の兆候、要観察`,
+      "info",
+      `[C3] 新戦略3 採用: anchor=${meta.action_bar_anchor}, depth=${meta.assistant_turn_depth}`,
     );
+    if (meta.assistant_turn_depth !== null && meta.assistant_turn_depth >= 10) {
+      firedWarnings.push("W2");
+      logPanel(
+        "warn",
+        `[C3:W2] ⚠ 応答ターン祖先が深い (depth=${meta.assistant_turn_depth})。DOM 階層変化の兆候、要観察`,
+      );
+    }
   }
 
   // W3: 戦略 4 (最終手段) 到達 → DOM 構造変化の可能性大 (error)
@@ -1121,12 +1165,14 @@ async function performSend(text, settings = {}) {
     );
   }
 
-  // W4: Retry aria-label セット全滅 → aria-label 改名の可能性 (error)
-  if (meta.retry_hit_count === 0) {
+  // W4: 抽出アンカー全滅（aria-label 再試行 も action-bar testid も 0）→ claude.ai が
+  // 両方を改名した可能性 (error)。2026-05-27 以降は action-bar testid が主アンカーの
+  // ため、aria-label だけ 0 でも testid があれば誤警報しないよう両者で判定する。
+  if (meta.retry_hit_count === 0 && (meta.action_bar_hit_count || 0) === 0) {
     firedWarnings.push("W4");
     logPanel(
       "error",
-      "[C3:W4] 🚨 Retry aria-label セット全滅。改名の可能性。DOM ロガーで再採取して ASSISTANT_RETRY_LABELS を更新してください。",
+      "[C3:W4] 🚨 抽出アンカー全滅（aria-label 再試行 / action-bar testid とも 0）。改名の可能性。DOM ロガーで再採取して ASSISTANT_RETRY_LABELS / action-bar セレクタを更新してください。",
     );
   }
 
