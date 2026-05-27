@@ -1,7 +1,7 @@
 # Roundtable プロジェクト 進捗サマリー
 
-**最終更新**: 2026-05-19
-**現在のフェーズ**: Phase 3a 完了（Step1-4 + fix1-5、Claude/ChatGPT 両社 10/10、production ready）→ main マージ / Step6 / Phase 3b 判断
+**最終更新**: 2026-05-27
+**現在のフェーズ**: Phase 3b（Gemini）Step3 完了 ✅（3社 production ready）→ Phase 3b 完了処理 / main マージ判断
 
 ---
 
@@ -23,7 +23,7 @@
 | 0 | 環境準備（拡張の骨格） | ✅ 完了（commit ddd83b5） |
 | 1 | Claudeタブで1往復（PoC） | ✅ 完了（commit 2bda463） |
 | 2 | DOM操作の堅牢化 | ✅ 完了（commit 68bd150、10/10 連続成功達成） |
-| 3 | 3社対応 | 🚧 Phase 3a: ChatGPT Step1-4 完了（production ready）/ Phase 3b Gemini 未着手 |
+| 3 | 3社対応 | ✅ **3社 production ready**（Claude / ChatGPT / Gemini）。Phase 3b Step3 で Gemini 送信パイプライン完成、10/10×2 + 既存2社リグレッション ✅ |
 | 4 | 議論履歴共有とターン制御 | 未着手 |
 | 5 | システムプロンプト整備 | 未着手 |
 | 6 | UI整備 | 未着手 |
@@ -681,6 +681,209 @@ fix5 再テストの Claude 10 連続（399秒、Phase 2 完了時 175秒 の約
 仮説: Mac 環境負荷 / Chrome 拡張メモリ圧迫 / claude.ai サーバ側の一時遅延 /
 AutoLog 準備処理の稀なハング。ChatGPT 10連続（219秒）では発生せず＝Claude
 タブまたは Mac 側の問題と推測。Phase 8 実戦投入で再現するか観察。
+
+### Step5（E モード ChatGPT 拡張）について
+
+ロードマップ上の Step5「E モード ChatGPT 拡張 → 10連続」は、実装の
+自然な流れで **Step1（E を send_to_ai+target に追従）+ Step4（ChatGPT
+10/10 を E モードで検証）に吸収**された。独立 Step5 としての作業は
+発生せず、完了条件（ChatGPT 10連続 10/10）は Step4 で達成済み。
+
+### Step6: プロンプト Spike テスト（commit 予定）— ✅ 強く効いた
+
+**実施日**: 2026-05-25（Kazuya 実機、claude.ai 1 社）
+
+仕様書 §5 初回投入プロンプトを claude.ai に投入し、忖度なしの意見を
+求める問い 2 つ（「提携先拡大 vs プロダクト磨き込み、忖度なしで」/
+「最初の1年で何に集中すべきか、忖度なしで」）で検証。
+
+**判定: ✅ 完全合格**:
+- 率直に立場明示（「プロダクト磨き込み先行派」即答）
+- 異論・前提疑い（「やらないこと4つ」を明示的に NO、前提の数字を問い返す）
+- 無難な同意・両論併記の逃げ なし
+- Kazuya への確認質問あり（§5 通り）/ 他参加者（Gemini/ChatGPT）の
+  役割想定あり / 「あえて反対意見として置く」とメタ意識を言語化
+
+**核心仮説の実証**: 「忖度禁止プロトコルを与えれば AI は本音で議論する」
+→ claude.ai 1 社で実証。Claude は §5 を内面化・応用するレベルに到達。
+Phase 4 の 4 者ラウンドテーブル設計の確信度が大幅向上。
+
+**Phase 5 への示唆**: **匿名モード追加は不要**（プロトコルだけで十分効く）。
+ロードマップ Phase 5 の判断ポイント「合意一色なら匿名モード検討」は、
+現時点では発動不要の見込み。
+
+**注意（未検証）**: ChatGPT / Gemini で同じプロトコルが効くかは未検証。
+Phase 3b 完了後、3 社揃った段階で実際の Roundtable モードで再 Spike 推奨。
+
+---
+
+## 🎉 Phase 3a 完全完了サマリ
+
+**完了日**: 2026-05-25 / **main マージ**: commit 2a34617（push 済み）
+
+- **Step1**（ルーティング一般化、claude 無変更）+ fix（タブ表示）/
+  fix2（timeout 戦略 spec）/ fix3（バックストップ可変）/ fix4（Enter 送信）/
+  fix5（ProseMirror 改行注入検証式）
+- **Step2**（調査専用 chatgpt.js）/ **Step3**（採取解析）/
+  **Step4**（送信パイプライン Thinking-aware、両社 10/10）/
+  **Step5**（Step1+4 に吸収）/ **Step6**（プロンプト Spike ✅）
+- Claude / ChatGPT 両社 production ready。仕様書 v0.5 整備。
+- 残: **Phase 3b（Gemini）**。困難なら 2 社で Phase 4 へダウンスコープ。
+
+---
+
+## Phase 3b 進捗ログ（Gemini）
+
+**作業ブランチ**: feature/phase3b-gemini（main 2a34617 から派生）
+
+### Step1: routing 一般化 + 調査専用 gemini.js（commit 71d7ba6）
+
+**完了日**: 2026-05-26
+
+Phase 3a Step1 で routing は target 化済みのため、Gemini 追加は最小:
+
+| ファイル | 変更 |
+|---|---|
+| background.js | `AI_TARGETS.gemini`（urlPrefix/urlMatch/script/`send_to_gemini`）追加（+7 行、追加のみ） |
+| side_panel.html/js | 🟨 Gemini セレクタ + タブ表示ロジック（URL ノイズ `/app`,`/gem/<id>` 除去）（+16 行） |
+| manifest.json | Phase 0 から gemini 登録済み（**無変更**） |
+| gemini.js | 二重ロードガード + ping + 手動 DOM ロガー + 構造スナップショット。`send_to_gemini` は notImplemented |
+
+**リグレッション安全性**: `git diff main..HEAD -- claude.js chatgpt.js` 空＝**両ファイル完全無変更（バイト一致）**。
+
+### Step1 + ping 動作確認（2026-05-26、Kazuya 実機）
+
+| テスト | 結果 |
+|---|---|
+| A. Claude リグレッション | ✅ 35字往復、`fallback:retry-ancestor-depth-5`、dedup 正常発火。Phase 3a 挙動完全一致 |
+| A. ChatGPT リグレッション | ✅ 23字往復、Thinking 12 回検出、dedup 不発。Step4 挙動完全一致 |
+| B. Gemini ping | ✅ content_script 到達（`https://gemini.google.com/app?hl=ja`） |
+
+→ routing に gemini 追加でも既存2社が無傷である客観確認。
+
+### Step1b: ストリーミングスナップショット強化（調査専用、本番影響ゼロ）
+
+初回 DOM 採取で**停止ボタン・思考表示が完全空振り**。根本原因 = 手動 DOM
+ロガーの MutationObserver が `childList` のみ監視で、Gemini（Angular）の
+**characterData ストリーム + 属性/クラス切替**を拾えない（送信⇔停止・思考は
+ノード入替ではなく属性変化）。対策として gemini.js に**生成中の DOM 状態を
+間隔ポーリング採取する `stream_snapshots`**（t=2〜30秒で10枚）を追加 +
+最終スナップショットの thinking プローブを **class 対応**化。`send_to_gemini`
+は notImplemented 維持＝Claude/ChatGPT・本番挙動への影響ゼロ。
+
+**ツールの学び**: childList-only observer は SPA の属性/characterData 駆動
+UI（ストリーミング本文・状態トグル）を構造的に採取不能。生成中の
+間隔スナップショットで補完するのが定石。
+
+### Step2 採取・解析 — 完全クローズ ✅（2026-05-26、Kazuya 2回採取）
+
+**採取条件**: Gemini 3.5 Flash 思考拡張、「91 と 97 と 119、それぞれ素数か
+理由とともに判定」、Show thinking 展開済みで 60 秒終了、stream_snapshots 10 枚。
+
+**確定セレクタ（claude.ai より堅牢: data-test-id + Web Component + aria の三重）**:
+
+| 用途 | セレクタ |
+|---|---|
+| 入力欄 | `rich-textarea .ql-editor[role="textbox"]`（aria「Gemini へのプロンプトを入力」）。**Quill エディタ** |
+| 送信 | `[data-test-id="send-button-container"] button[aria-label="プロンプトを送信"]` |
+| 停止 | 同コンテナ内 `button[aria-label="回答を停止"]`（**送信⇔停止が同一ノードで aria 切替＝ChatGPT 型**） |
+| 応答抽出 | **最後の `model-response` 内 `.markdown-main-panel`**（「Gemini の回答」プレフィックス無し） |
+| 思考(live) | `[data-test-id="thinking-overlay-content"]` / `.thinking-dots-animation` / `.thinking-container`（英語ヘッドライン "Analyzing…"）+ 応答に `.has-thoughts` |
+| モデル表示 | `[data-test-id="bard-mode-menu-button"]`（text「Flash 拡張」、§7 metadata.model） |
+
+**重要発見**:
+1. **停止ボタン = `回答を停止`**（stream_snapshots で t=10〜20 秒の生成中のみ出現を実証）。childList observer の死角だったが間隔 SS で確定。
+2. **思考検知を Gemini で達成**（Phase 2「Thinking 回収点」）: 生成中に
+   `thinking-overlay-content` / `thinking-dots-animation` が出現。無音 TO
+   リセットに使える（仕様書 §12.1.1 戦略が 3 社目でも成立）。
+   なお `<model-thoughts>` 要素は**存在しない**（当初仮説は誤り、データで訂正）。
+3. **dedup = 保険（ChatGPT 同型）**: 完了応答は `aria-live="off"`、最新のみ
+   `polite`、cdk-announcer は空。本文の常時二重 render 無し（Claude と異なる）。
+   → 抽出は**最後の** `.markdown-main-panel` をピンポイント。
+4. **完了検知**: 停止ボタン「回答を停止」出現→消滅（claude/chatgpt と同型）
+   + A1 安定化。⚠ `response-footer.complete` は会話内の過去ターンで
+   document 全体が汚染されるため、**最後の model-response にスコープ**すること。
+5. **Quill エディタ**（`.ql-editor`）。Claude(TipTap)/ChatGPT(ProseMirror) と
+   別系統 → **Step3 で fix5 の改行二重化が Quill で再発しないか要重点検証**。
+6. **bot 検知**: recaptcha/cloudflare とも false（chatgpt.com 同様、常時ガード無し）。
+
+**採取データ**: `docs/gemini_domlog.json`（141 events + stream_snapshots 10）/
+`docs/gemini_snapshot.json`（構造スナップショット）。調査記録。
+
+**ピボット評価**: リスク低。Gemini DOM は三重アンカーで堅牢、思考検知も実証。
+**2 社ダウンスコープは不要、Phase 3b 続行**。
+
+→ **Step3（gemini.js 送信パイプライン: 注入/送信/応答抽出 + Thinking-aware）へ。**
+
+### Step3: gemini.js 送信パイプライン（commit cf089c6）— 完全勝利 ✅
+
+**実装・動作確認完了日**: 2026-05-27（Kazuya 実機確認）
+
+chatgpt.js アーキを移植し Step2 確定の Gemini セレクタに差替え。
+`send_to_gemini` を notImplemented から実送信に切替。**claude.js /
+chatgpt.js は無変更（main とバイト一致）＝リグレッション源なし**。
+Quill 注入は `normalizeForInjectCheck`（fix5）を移植。完了検知は
+「回答を停止」出現→消滅 + A1 安定化。Thinking 検知は
+`thinking-overlay-content` / `thinking-dots-animation`。
+
+**動作確認結果（全 ✅）**:
+
+| テスト | 結果 |
+|---|---|
+| 1. Gemini 単発「127は素数か」 | ✅ 349字、Thinking 31回、`selector=model-response .markdown-main-panel`、プレフィックス混入なし |
+| 2. **Gemini 改行あり**（3行） | ✅ **Quill で fix5 が効いた**。注入は `execCommand-insertText`、Gemini が改行を正しく認識（「四・五・六行目」とカウントアップ） |
+| 3. Gemini 10連続 ① | ✅ **10/10、222秒** |
+| 4. Gemini 10連続 ②（リロード後） | ✅ **10/10、231秒** |
+| 5. Claude 改行リグレッション | ✅ 「3行ともきれいに反映」 |
+| 6. ChatGPT 改行リグレッション | ✅ オウム返しで改行再現 |
+
+**重要な観察**:
+1. **注入主軸が3社で異なる**: claude=clipboard-paste / chatgpt=clipboard-paste
+   / **gemini=execCommand-insertText**。→ 3手段フォールバック設計が正解だった。
+2. **Thinking 検知が完璧**: iter5（1067字応答）で 26 秒の長考を Thinking
+   35→55 回検知で完全カバー。`thinking-dots-animation` と
+   `thinking-overlay-content` の両方が発火。無音 TO リセットが機能。
+3. **dedup は ChatGPT 型（予測通り）**: 全 iteration で `[C1]` 不発が正常。
+   iter4,8 の「段落 2 個」診断は重複でなく正当な複数段落を正しく素通し。
+4. **既存2社リグレッション ✅**: Claude=完全一致重複検出 Phase 2 通り、
+   ChatGPT=aria-live なし Step4 通り。
+
+**fix5 の汎用性が実証**: ProseMirror 系3エディタ
+（Claude=TipTap / ChatGPT=ProseMirror / Gemini=Quill）すべてで改行注入検証式が
+機能。**Quill 改行二重化リスクは fix5 移植で完全解消、追加 fix 不要**。
+
+→ **Phase 3b Step3 完了。gemini.js は production ready。3社揃った。**
+
+---
+
+## 🎉 Phase 3b 完了サマリ（Gemini）
+
+**完了日**: 2026-05-27 / **作業ブランチ**: feature/phase3b-gemini
+
+- **Step1**（routing 一般化 + 調査専用 gemini.js、claude/chatgpt 無変更）
+- **Step1b**（ストリーミングSS強化: childList observer の死角を間隔
+  ポーリングで補完。停止ボタン・思考表示を可視化）
+- **Step2**（DOM 解析: Quill 入力 / `回答を停止` / `model-response
+  .markdown-main-panel` / `thinking-overlay-content` 確定。dedup=ChatGPT 型）
+- **Step3**（送信パイプライン Thinking-aware、10/10×2 + 既存2社リグレッション ✅）
+- **3社 production ready 達成**（Claude / ChatGPT / Gemini）
+
+**Phase 3 全体の意義**:
+- **Thinking 検知戦略を3社で確立**（Phase 2「回収点」の3社目）。各社で
+  表現は違う（claude=空振り→Phase3で再採取 / chatgpt=loading-shimmer+思考時間 /
+  gemini=thinking-overlay-content+thinking-dots-animation）が、
+  「思考中は無音 TO リセット」の方針が全社で機能。
+- **fix5 が ProseMirror 系3エディタで汎用的に機能**（TipTap/ProseMirror/Quill）。
+- **3手段注入フォールバックの正しさ実証**（主軸が claude/chatgpt=paste、
+  gemini=execCommand と社ごとに異なる）。
+- **dedup 戦略の社差を明文化**: claude=Y 主役 / chatgpt=保険 / gemini=保険
+  （完了応答 aria-live=off で本文の二重 render 無し）。
+
+**残タスク（Kazuya 判断待ち）**:
+1. 3社揃った Roundtable プロンプト Spike 再テスト（Step6 相当。仕様書 §5
+   忖度禁止プロトコルが ChatGPT/Gemini でも効くか。Phase 3a Step6 で claude
+   単体は実証済み、3社での再検証は未実施）
+2. Phase 3b 完了として main マージ判断 → Phase 4（議論履歴共有とターン制御）へ
 
 ---
 

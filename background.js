@@ -43,6 +43,13 @@ const AI_TARGETS = {
     script: "content_scripts/chatgpt.js",
     sendType: "send_to_chatgpt",
   },
+  gemini: {
+    label: "Gemini",
+    urlPrefix: "https://gemini.google.com/",
+    urlMatch: ["https://gemini.google.com/*"],
+    script: "content_scripts/gemini.js",
+    sendType: "send_to_gemini",
+  },
 };
 const DEFAULT_TARGET = "claude";
 

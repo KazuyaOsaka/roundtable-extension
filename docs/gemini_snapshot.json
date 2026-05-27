@@ -1,0 +1,1917 @@
+{
+  "candidate_count": 121,
+  "candidates": [
+    {
+      "attrs": {},
+      "classes": "ng-star-inserted",
+      "index": 0,
+      "strategy": "webcomponent:user-query",
+      "tag": "user-query",
+      "text_head": "あなたのプロンプト\n\n127 は素数か、理由とともに説明してください",
+      "text_length": 34
+    },
+    {
+      "attrs": {},
+      "classes": "enable-lr26-response-chrome-updates ng-star-inserted",
+      "index": 1,
+      "strategy": "webcomponent:model-response",
+      "tag": "model-response",
+      "text_head": "Gemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を数学的な判定方法を交えて分かりやすく説明します。\n\n素数である理由\n\n素数とは、",
+      "text_length": 558
+    },
+    {
+      "attrs": {
+        "id": "message-content-id-r_4981448bf9d8d1ff"
+      },
+      "classes": "ng-star-inserted",
+      "index": 2,
+      "strategy": "webcomponent:message-content",
+      "tag": "message-content",
+      "text_head": "結論から申し上げますと、127は素数です。\n\nその理由を数学的な判定方法を交えて分かりやすく説明します。\n\n素数である理由\n\n素数とは、「1とその数自身以外に正",
+      "text_length": 546
+    },
+    {
+      "attrs": {},
+      "classes": "ng-star-inserted",
+      "index": 3,
+      "strategy": "webcomponent:user-query",
+      "tag": "user-query",
+      "text_head": "あなたのプロンプト\n\n127 は素数か、理由とともに説明してください",
+      "text_length": 34
+    },
+    {
+      "attrs": {},
+      "classes": "enable-lr26-response-chrome-updates ng-star-inserted",
+      "index": 4,
+      "strategy": "webcomponent:model-response",
+      "tag": "model-response",
+      "text_head": "Gemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を、数学的な判定アルゴリズム（試し割り法）を交えて分かりやすく解説します。\n\n素数",
+      "text_length": 595
+    },
+    {
+      "attrs": {
+        "id": "message-content-id-r_61043b4374df9a1e"
+      },
+      "classes": "ng-star-inserted",
+      "index": 5,
+      "strategy": "webcomponent:message-content",
+      "tag": "message-content",
+      "text_head": "結論から申し上げますと、127は素数です。\n\nその理由を、数学的な判定アルゴリズム（試し割り法）を交えて分かりやすく解説します。\n\n素数である理由\n\n素数とは、",
+      "text_length": 583
+    },
+    {
+      "attrs": {},
+      "classes": "ng-star-inserted",
+      "index": 6,
+      "strategy": "webcomponent:user-query",
+      "tag": "user-query",
+      "text_head": "あなたのプロンプト\n\n91 と 97 と 119、それぞれ素数か理由とともに判定してください",
+      "text_length": 46
+    },
+    {
+      "attrs": {},
+      "classes": "enable-lr26-response-chrome-updates ng-star-inserted",
+      "index": 7,
+      "strategy": "webcomponent:model-response",
+      "tag": "model-response",
+      "text_head": "Gemini の回答\n\n91、97、119の3つの数について、それぞれ素数かどうかの判定と、その理由を解説します。\n\n結論から言うと、素数は97のみで、91と1",
+      "text_length": 1050
+    },
+    {
+      "attrs": {
+        "id": "message-content-id-r_5986c38c883d5878"
+      },
+      "classes": "ng-star-inserted",
+      "index": 8,
+      "strategy": "webcomponent:message-content",
+      "tag": "message-content",
+      "text_head": "91、97、119の3つの数について、それぞれ素数かどうかの判定と、その理由を解説します。\n\n結論から言うと、素数は97のみで、91と119は合成数（素数ではな",
+      "text_length": 1038
+    },
+    {
+      "attrs": {
+        "data-test-id": "chat-app"
+      },
+      "classes": "side-nav-menu-button with-pill-ui",
+      "data_message_id": null,
+      "data_test_id": "chat-app",
+      "index": 0,
+      "strategy": "data-id-attr",
+      "tag": "div",
+      "text_head": "Flash\n拡張",
+      "text_length": 8
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-2",
+        "data-test-id": "side-nav-menu-button"
+      },
+      "classes": "mat-mdc-tooltip-trigger gem-button gem-button-badge-size-small gem-button-size-medium gem-button-type-text-primary lm-en",
+      "data_message_id": null,
+      "data_test_id": "side-nav-menu-button",
+      "index": 1,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "side-nav-menu-badge"
+      },
+      "classes": "xap-count-badge-dot ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "side-nav-menu-badge",
+      "index": 2,
+      "strategy": "data-id-attr",
+      "tag": "xap-count-badge",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "bard-mode-switcher"
+      },
+      "classes": "ng-tns-c1009843557-0 sparkle-in-header mode-picker-in-header ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "bard-mode-switcher",
+      "index": 3,
+      "strategy": "data-id-attr",
+      "tag": "bard-mode-switcher",
+      "text_head": "Flash\n拡張",
+      "text_length": 8
+    },
+    {
+      "attrs": {
+        "data-test-id": "bard-mode-menu-button",
+        "type": "textSecondary"
+      },
+      "classes": "gds-mode-switch-button logo-pill-btn gem-button gem-button-badge-size-small gem-button-size-small gem-button-type-text-s",
+      "data_message_id": null,
+      "data_test_id": "bard-mode-menu-button",
+      "index": 4,
+      "strategy": "data-id-attr",
+      "tag": "gem-button",
+      "text_head": "Flash\n拡張",
+      "text_length": 8
+    },
+    {
+      "attrs": {
+        "data-test-id": "logo-pill-label-container"
+      },
+      "classes": "logo-pill-label-container thinking-level-enabled lm-redesign-enabled ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "logo-pill-label-container",
+      "index": 5,
+      "strategy": "data-id-attr",
+      "tag": "div",
+      "text_head": "Flash\n拡張",
+      "text_length": 8
+    },
+    {
+      "attrs": {
+        "data-test-id": "new-chat-button-container"
+      },
+      "classes": "buttons-container ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "new-chat-button-container",
+      "index": 6,
+      "strategy": "data-id-attr",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-3",
+        "data-test-id": "new-chat-button"
+      },
+      "classes": "mat-mdc-tooltip-trigger gem-button gem-button-badge-size-small gem-button-size-small gem-button-type-text-primary lm-ena",
+      "data_message_id": null,
+      "data_test_id": "new-chat-button",
+      "index": 7,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-controls": "ng-menu-a66220-1",
+        "aria-disabled": "false",
+        "aria-expanded": "false",
+        "aria-haspopup": "true",
+        "data-test-id": "conversation-actions-menu-icon-button"
+      },
+      "classes": "gem-button gem-button-badge-size-small gem-button-size-small gem-button-type-text-primary lm-enabled is-mobile ng-star-i",
+      "data_message_id": null,
+      "data_test_id": "conversation-actions-menu-icon-button",
+      "index": 8,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-label": "新しいチャット",
+        "data-test-id": "side-nav-sparkle-button"
+      },
+      "classes": "side-nav-sparkle-button",
+      "data_message_id": null,
+      "data_test_id": "side-nav-sparkle-button",
+      "index": 9,
+      "strategy": "data-id-attr",
+      "tag": "a",
+      "text_head": "Gemini",
+      "text_length": 6
+    },
+    {
+      "attrs": {
+        "aria-label": "サイドバーを開く",
+        "data-test-id": "side-nav-sparkle-button"
+      },
+      "classes": "mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-mdc-tooltip-trigger side-nav-sparkle-button mat-unthemed lm-",
+      "data_message_id": null,
+      "data_test_id": "side-nav-sparkle-button",
+      "index": 10,
+      "strategy": "data-id-attr",
+      "tag": "button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "overflow-container"
+      },
+      "classes": "overflow-container mobile remove-top-margin",
+      "data_message_id": null,
+      "data_test_id": "overflow-container",
+      "index": 11,
+      "strategy": "data-id-attr",
+      "tag": "div",
+      "text_head": "ノートブックノートブックを新規作成すべてのノートブック最近",
+      "text_length": 29
+    },
+    {
+      "attrs": {
+        "data-test-id": "new-chat-button"
+      },
+      "classes": "is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "new-chat-button",
+      "index": 12,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "search-chats-button"
+      },
+      "classes": "is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "search-chats-button",
+      "index": 13,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "my-stuff-side-nav-entry-button"
+      },
+      "classes": "is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "my-stuff-side-nav-entry-button",
+      "index": 14,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "my-stuff-side-nav-entry-button"
+      },
+      "classes": "is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "my-stuff-side-nav-entry-button",
+      "index": 15,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-label": "Gem と最近の会話を読み込んでいます",
+        "aria-valuemax": "100",
+        "aria-valuemin": "0",
+        "data-test-id": "loading-content-spinner",
+        "role": "progressbar"
+      },
+      "classes": "mat-mdc-progress-spinner mdc-circular-progress mat-primary mdc-circular-progress--indeterminate",
+      "data_message_id": null,
+      "data_test_id": "loading-content-spinner",
+      "index": 16,
+      "strategy": "data-id-attr",
+      "tag": "mat-progress-spinner",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "notebooks-expandable-section"
+      },
+      "classes": "expanded ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "notebooks-expandable-section",
+      "index": 17,
+      "strategy": "data-id-attr",
+      "tag": "expandable-section",
+      "text_head": "ノートブックノートブックを新規作成すべてのノートブック",
+      "text_length": 27
+    },
+    {
+      "attrs": {
+        "aria-controls": "sidenav-section-content-notebooks",
+        "aria-expanded": "true",
+        "aria-label": "「ノートブック」を切り替える",
+        "data-test-id": "expandable-section-toggle"
+      },
+      "classes": "expandable-section-header",
+      "data_message_id": null,
+      "data_test_id": "expandable-section-toggle",
+      "index": 18,
+      "strategy": "data-id-attr",
+      "tag": "button",
+      "text_head": "ノートブック",
+      "text_length": 6
+    },
+    {
+      "attrs": {
+        "data-test-id": "expandable-section-content",
+        "id": "sidenav-section-content-notebooks"
+      },
+      "classes": "expandable-section-content",
+      "data_message_id": null,
+      "data_test_id": "expandable-section-content",
+      "index": 19,
+      "strategy": "data-id-attr",
+      "tag": "div",
+      "text_head": "ノートブックを新規作成すべてのノートブック",
+      "text_length": 21
+    },
+    {
+      "attrs": {
+        "data-test-id": "new-notebook-button"
+      },
+      "classes": "ng-tns-c755427421-6 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "new-notebook-button",
+      "index": 20,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "ノートブックを新規作成",
+      "text_length": 11
+    },
+    {
+      "attrs": {
+        "data-test-id": "project-item-button-gem"
+      },
+      "classes": "ng-tns-c3886762158-12 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "project-item-button-gem",
+      "index": 21,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "project-item-button-gem"
+      },
+      "classes": "ng-tns-c3886762158-13 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "project-item-button-gem",
+      "index": 22,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "project-management-button"
+      },
+      "classes": "ng-tns-c755427421-6 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "project-management-button",
+      "index": 23,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "すべてのノートブック",
+      "text_length": 10
+    },
+    {
+      "attrs": {
+        "data-test-id": "chats-expandable-section"
+      },
+      "classes": "expanded ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "chats-expandable-section",
+      "index": 24,
+      "strategy": "data-id-attr",
+      "tag": "expandable-section",
+      "text_head": "最近",
+      "text_length": 2
+    },
+    {
+      "attrs": {
+        "aria-controls": "sidenav-section-content-chats",
+        "aria-expanded": "true",
+        "aria-label": "「最近」を切り替える",
+        "data-test-id": "expandable-section-toggle"
+      },
+      "classes": "expandable-section-header",
+      "data_message_id": null,
+      "data_test_id": "expandable-section-toggle",
+      "index": 25,
+      "strategy": "data-id-attr",
+      "tag": "button",
+      "text_head": "最近",
+      "text_length": 2
+    },
+    {
+      "attrs": {
+        "data-test-id": "expandable-section-content",
+        "id": "sidenav-section-content-chats"
+      },
+      "classes": "expandable-section-content",
+      "data_message_id": null,
+      "data_test_id": "expandable-section-content",
+      "index": 26,
+      "strategy": "data-id-attr",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "all-conversations"
+      },
+      "classes": "sidenav-style-updates ng-tns-c40094145-14 ia-redesign mobile side-nav-style-updates enable-sidenav-v2 lr26 ng-star-inser",
+      "data_message_id": null,
+      "data_test_id": "all-conversations",
+      "index": 27,
+      "strategy": "data-id-attr",
+      "tag": "conversations-list",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "conversation"
+      },
+      "classes": "ng-tns-c40094145-14 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "conversation",
+      "index": 28,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "conversation"
+      },
+      "classes": "ng-tns-c40094145-14 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "conversation",
+      "index": 29,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "conversation"
+      },
+      "classes": "ng-tns-c40094145-14 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "conversation",
+      "index": 30,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "conversation"
+      },
+      "classes": "ng-tns-c40094145-14 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "conversation",
+      "index": 31,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "conversation"
+      },
+      "classes": "ng-tns-c40094145-14 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "conversation",
+      "index": 32,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "conversation"
+      },
+      "classes": "ng-tns-c40094145-14 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "conversation",
+      "index": 33,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "conversation"
+      },
+      "classes": "ng-tns-c40094145-14 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "conversation",
+      "index": 34,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "conversation"
+      },
+      "classes": "ng-tns-c40094145-14 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "conversation",
+      "index": 35,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "conversation"
+      },
+      "classes": "ng-tns-c40094145-14 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "conversation",
+      "index": 36,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "conversation"
+      },
+      "classes": "ng-tns-c40094145-14 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "conversation",
+      "index": 37,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "conversation"
+      },
+      "classes": "ng-tns-c40094145-14 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "conversation",
+      "index": 38,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "conversation"
+      },
+      "classes": "ng-tns-c40094145-14 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "conversation",
+      "index": 39,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "conversation"
+      },
+      "classes": "ng-tns-c40094145-14 is-mobile ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "conversation",
+      "index": 40,
+      "strategy": "data-id-attr",
+      "tag": "gem-nav-list-item",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-label": "会話の履歴を読み込んでいます",
+        "aria-valuemax": "100",
+        "aria-valuemin": "0",
+        "data-test-id": "loading-history-spinner",
+        "role": "progressbar"
+      },
+      "classes": "mat-mdc-progress-spinner mdc-circular-progress mat-primary mdc-circular-progress--indeterminate",
+      "data_message_id": null,
+      "data_test_id": "loading-history-spinner",
+      "index": 41,
+      "strategy": "data-id-attr",
+      "tag": "mat-progress-spinner",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-expanded": "false",
+        "aria-label": "設定",
+        "data-test-id": "mavatar-footer-settings-button"
+      },
+      "classes": "mdc-icon-button mat-mdc-icon-button mat-mdc-button-base mat-mdc-tooltip-trigger mat-mdc-menu-trigger mavatar-settings-bu",
+      "data_message_id": null,
+      "data_test_id": "mavatar-footer-settings-button",
+      "index": 42,
+      "strategy": "data-id-attr",
+      "tag": "button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "mobile-settings-soft-badge"
+      },
+      "classes": "xap-count-badge-dot ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "mobile-settings-soft-badge",
+      "index": 43,
+      "strategy": "data-id-attr",
+      "tag": "xap-count-badge",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "announcement-banner-container"
+      },
+      "classes": "announcement-banner-container",
+      "data_message_id": null,
+      "data_test_id": "announcement-banner-container",
+      "index": 44,
+      "strategy": "data-id-attr",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-hveid": "1",
+        "data-lhcontainer": "1",
+        "data-test-id": "chat-history-container"
+      },
+      "classes": "chat-history enable-2026q1-formatting-improvements enable-lr26-markdown-styling lm",
+      "data_message_id": null,
+      "data_test_id": "chat-history-container",
+      "index": 45,
+      "strategy": "data-id-attr",
+      "tag": "infinite-scroller",
+      "text_head": "あなたのプロンプト\n\n127 は素数か、理由とともに説明してください\n\nGemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を数学的な",
+      "text_length": 2357
+    },
+    {
+      "attrs": {
+        "data-test-id": "luminous-collapsed-bubble"
+      },
+      "classes": "user-query-bubble-with-background enable-2026q1-formatting-improvements ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "luminous-collapsed-bubble",
+      "index": 46,
+      "strategy": "data-id-attr",
+      "tag": "span",
+      "text_head": "あなたのプロンプト\n\n127 は素数か、理由とともに説明してください",
+      "text_length": 34
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-5",
+        "data-test-id": "prompt-copy-button",
+        "type": "translucent"
+      },
+      "classes": "mat-mdc-tooltip-trigger luminous-action-button gem-button gem-button-badge-size-small gem-button-size-small gem-button-t",
+      "data_message_id": null,
+      "data_test_id": "prompt-copy-button",
+      "index": 47,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-6",
+        "data-test-id": "thumb-up-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger gem-button gem-button-badge-size-small gem-button-size-small gem-button-type-on-surface lm-enabl",
+      "data_message_id": null,
+      "data_test_id": "thumb-up-button",
+      "index": 48,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-7",
+        "data-test-id": "thumb-down-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger gem-button gem-button-badge-size-small gem-button-size-small gem-button-type-on-surface lm-enabl",
+      "data_message_id": null,
+      "data_test_id": "thumb-down-button",
+      "index": 49,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-8",
+        "data-test-id": "share-and-export-menu-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger ng-tns-c646121313-9 gem-button gem-button-badge-size-small gem-button-size-small gem-button-type",
+      "data_message_id": null,
+      "data_test_id": "share-and-export-menu-button",
+      "index": 50,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-9",
+        "data-test-id": "copy-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger gem-button gem-button-badge-size-small gem-button-size-small gem-button-type-on-surface lm-enabl",
+      "data_message_id": null,
+      "data_test_id": "copy-button",
+      "index": 51,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-controls": "ng-menu-a66220-2",
+        "aria-describedby": "cdk-describedby-message-ng-1-10",
+        "aria-disabled": "false",
+        "aria-expanded": "false",
+        "aria-haspopup": "true",
+        "data-test-id": "more-menu-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger ng-tns-c646121313-9 gem-button gem-button-badge-size-small gem-button-size-small gem-button-type",
+      "data_message_id": null,
+      "data_test_id": "more-menu-button",
+      "index": 52,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "luminous-collapsed-bubble"
+      },
+      "classes": "user-query-bubble-with-background enable-2026q1-formatting-improvements ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "luminous-collapsed-bubble",
+      "index": 53,
+      "strategy": "data-id-attr",
+      "tag": "span",
+      "text_head": "あなたのプロンプト\n\n127 は素数か、理由とともに説明してください",
+      "text_length": 34
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-5",
+        "data-test-id": "prompt-copy-button",
+        "type": "translucent"
+      },
+      "classes": "mat-mdc-tooltip-trigger luminous-action-button gem-button gem-button-badge-size-small gem-button-size-small gem-button-t",
+      "data_message_id": null,
+      "data_test_id": "prompt-copy-button",
+      "index": 54,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-6",
+        "data-test-id": "thumb-up-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger gem-button gem-button-badge-size-small gem-button-size-small gem-button-type-on-surface lm-enabl",
+      "data_message_id": null,
+      "data_test_id": "thumb-up-button",
+      "index": 55,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-7",
+        "data-test-id": "thumb-down-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger gem-button gem-button-badge-size-small gem-button-size-small gem-button-type-on-surface lm-enabl",
+      "data_message_id": null,
+      "data_test_id": "thumb-down-button",
+      "index": 56,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-8",
+        "data-test-id": "share-and-export-menu-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger ng-tns-c646121313-11 gem-button gem-button-badge-size-small gem-button-size-small gem-button-typ",
+      "data_message_id": null,
+      "data_test_id": "share-and-export-menu-button",
+      "index": 57,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-9",
+        "data-test-id": "copy-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger gem-button gem-button-badge-size-small gem-button-size-small gem-button-type-on-surface lm-enabl",
+      "data_message_id": null,
+      "data_test_id": "copy-button",
+      "index": 58,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-controls": "ng-menu-a66220-3",
+        "aria-describedby": "cdk-describedby-message-ng-1-10",
+        "aria-disabled": "false",
+        "aria-expanded": "false",
+        "aria-haspopup": "true",
+        "data-test-id": "more-menu-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger ng-tns-c646121313-11 gem-button gem-button-badge-size-small gem-button-size-small gem-button-typ",
+      "data_message_id": null,
+      "data_test_id": "more-menu-button",
+      "index": 59,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "luminous-collapsed-bubble"
+      },
+      "classes": "user-query-bubble-with-background enable-2026q1-formatting-improvements ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "luminous-collapsed-bubble",
+      "index": 60,
+      "strategy": "data-id-attr",
+      "tag": "span",
+      "text_head": "あなたのプロンプト\n\n91 と 97 と 119、それぞれ素数か理由とともに判定してください",
+      "text_length": 46
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-5",
+        "data-test-id": "prompt-copy-button",
+        "type": "translucent"
+      },
+      "classes": "mat-mdc-tooltip-trigger luminous-action-button gem-button gem-button-badge-size-small gem-button-size-small gem-button-t",
+      "data_message_id": null,
+      "data_test_id": "prompt-copy-button",
+      "index": 61,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-16",
+        "data-test-id": "prompt-edit-button",
+        "type": "translucent"
+      },
+      "classes": "mat-mdc-tooltip-trigger luminous-action-button gem-button gem-button-badge-size-small gem-button-size-small gem-button-t",
+      "data_message_id": null,
+      "data_test_id": "prompt-edit-button",
+      "index": 62,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-6",
+        "data-test-id": "thumb-up-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger gem-button gem-button-badge-size-small gem-button-size-small gem-button-type-on-surface lm-enabl",
+      "data_message_id": null,
+      "data_test_id": "thumb-up-button",
+      "index": 63,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-7",
+        "data-test-id": "thumb-down-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger gem-button gem-button-badge-size-small gem-button-size-small gem-button-type-on-surface lm-enabl",
+      "data_message_id": null,
+      "data_test_id": "thumb-down-button",
+      "index": 64,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-controls": "ng-menu-a66220-6",
+        "aria-describedby": "cdk-describedby-message-ng-1-18",
+        "aria-disabled": "false",
+        "aria-expanded": "false",
+        "aria-haspopup": "true",
+        "data-test-id": "regenerate-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger gem-button gem-button-badge-size-small gem-button-size-small gem-button-type-on-surface lm-enabl",
+      "data_message_id": null,
+      "data_test_id": "regenerate-button",
+      "index": 65,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-8",
+        "data-test-id": "share-and-export-menu-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger ng-tns-c646121313-17 gem-button gem-button-badge-size-small gem-button-size-small gem-button-typ",
+      "data_message_id": null,
+      "data_test_id": "share-and-export-menu-button",
+      "index": 66,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-describedby": "cdk-describedby-message-ng-1-9",
+        "data-test-id": "copy-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger gem-button gem-button-badge-size-small gem-button-size-small gem-button-type-on-surface lm-enabl",
+      "data_message_id": null,
+      "data_test_id": "copy-button",
+      "index": 67,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "aria-controls": "ng-menu-a66220-7",
+        "aria-describedby": "cdk-describedby-message-ng-1-10",
+        "aria-disabled": "false",
+        "aria-expanded": "false",
+        "aria-haspopup": "true",
+        "data-test-id": "more-menu-button",
+        "type": "onSurface"
+      },
+      "classes": "mat-mdc-tooltip-trigger ng-tns-c646121313-17 gem-button gem-button-badge-size-small gem-button-size-small gem-button-typ",
+      "data_message_id": null,
+      "data_test_id": "more-menu-button",
+      "index": 68,
+      "strategy": "data-id-attr",
+      "tag": "gem-icon-button",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "disclaimer"
+      },
+      "classes": "gds-body-s ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "disclaimer",
+      "index": 69,
+      "strategy": "data-id-attr",
+      "tag": "p",
+      "text_head": "Gemini は AI であり、間違えることがあります。",
+      "text_length": 28
+    },
+    {
+      "attrs": {
+        "data-test-id": "textarea-inner"
+      },
+      "classes": "text-input-field_textarea-inner ng-tns-c761892454-3",
+      "data_message_id": null,
+      "data_test_id": "textarea-inner",
+      "index": 70,
+      "strategy": "data-id-attr",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "textarea-wrapper"
+      },
+      "classes": "ng-tns-c761892454-3",
+      "data_message_id": null,
+      "data_test_id": "textarea-wrapper",
+      "index": 71,
+      "strategy": "data-id-attr",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "send-button-container"
+      },
+      "classes": "mat-mdc-tooltip-trigger send-button-container ng-tns-c761892454-3 inner is-mobile-device lm-enabled ng-star-inserted dis",
+      "data_message_id": null,
+      "data_test_id": "send-button-container",
+      "index": 72,
+      "strategy": "data-id-attr",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-test-id": "disclaimer"
+      },
+      "classes": "gds-body-s ng-star-inserted",
+      "data_message_id": null,
+      "data_test_id": "disclaimer",
+      "index": 73,
+      "strategy": "data-id-attr",
+      "tag": "p",
+      "text_head": "Gemini は AI であり、間違えることがあります。",
+      "text_length": 28
+    },
+    {
+      "attrs": {},
+      "classes": "response-tts-container hidden ng-star-inserted",
+      "index": 0,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "id": "4981448bf9d8d1ff"
+      },
+      "classes": "conversation-container message-actions-hover-boundary ng-star-inserted",
+      "index": 1,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "あなたのプロンプト\n\n127 は素数か、理由とともに説明してください\n\nGemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を数学的な",
+      "text_length": 594
+    },
+    {
+      "attrs": {
+        "data-hveid": "1"
+      },
+      "classes": "response-container response-container-with-gpi ng-tns-c4223253065-8 no-background is-mobile",
+      "index": 2,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "Gemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を数学的な判定方法を交えて分かりやすく説明します。\n\n素数である理由\n\n素数とは、",
+      "text_length": 558
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-header ng-tns-c4223253065-8 ng-star-inserted",
+      "index": 3,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-header-controls ng-tns-c4223253065-8",
+      "index": 4,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "single-draft-response-container ng-tns-c4223253065-8",
+      "index": 5,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-header-status ng-tns-c4223253065-8",
+      "index": 6,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-header-processing-state ng-tns-c4223253065-8",
+      "index": 7,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-hveid": "2"
+      },
+      "classes": "presented-response-container ng-tns-c4223253065-8",
+      "index": 8,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "Gemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を数学的な判定方法を交えて分かりやすく説明します。\n\n素数である理由\n\n素数とは、",
+      "text_length": 558
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-content ng-tns-c4223253065-8 has-thoughts is-mobile",
+      "index": 9,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "Gemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を数学的な判定方法を交えて分かりやすく説明します。\n\n素数である理由\n\n素数とは、",
+      "text_length": 558
+    },
+    {
+      "attrs": {},
+      "classes": "response-content ng-tns-c4223253065-8",
+      "index": 10,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "Gemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を数学的な判定方法を交えて分かりやすく説明します。\n\n素数である理由\n\n素数とは、",
+      "text_length": 558
+    },
+    {
+      "attrs": {},
+      "classes": "response-footer complete has-thoughts is-mobile gap",
+      "index": 11,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-footer ng-tns-c4223253065-8 ng-star-inserted",
+      "index": 12,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "id": "61043b4374df9a1e"
+      },
+      "classes": "conversation-container message-actions-hover-boundary ng-star-inserted",
+      "index": 13,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "あなたのプロンプト\n\n127 は素数か、理由とともに説明してください\n\nGemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を、数学的",
+      "text_length": 631
+    },
+    {
+      "attrs": {
+        "data-hveid": "1"
+      },
+      "classes": "response-container response-container-with-gpi ng-tns-c4223253065-10 no-background is-mobile",
+      "index": 14,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "Gemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を、数学的な判定アルゴリズム（試し割り法）を交えて分かりやすく解説します。\n\n素数",
+      "text_length": 595
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-header ng-tns-c4223253065-10 ng-star-inserted",
+      "index": 15,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-header-controls ng-tns-c4223253065-10",
+      "index": 16,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "single-draft-response-container ng-tns-c4223253065-10",
+      "index": 17,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-header-status ng-tns-c4223253065-10",
+      "index": 18,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-header-processing-state ng-tns-c4223253065-10",
+      "index": 19,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-hveid": "2"
+      },
+      "classes": "presented-response-container ng-tns-c4223253065-10",
+      "index": 20,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "Gemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を、数学的な判定アルゴリズム（試し割り法）を交えて分かりやすく解説します。\n\n素数",
+      "text_length": 595
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-content ng-tns-c4223253065-10 has-thoughts is-mobile",
+      "index": 21,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "Gemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を、数学的な判定アルゴリズム（試し割り法）を交えて分かりやすく解説します。\n\n素数",
+      "text_length": 595
+    },
+    {
+      "attrs": {},
+      "classes": "response-content ng-tns-c4223253065-10",
+      "index": 22,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "Gemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を、数学的な判定アルゴリズム（試し割り法）を交えて分かりやすく解説します。\n\n素数",
+      "text_length": 595
+    },
+    {
+      "attrs": {},
+      "classes": "response-footer complete has-thoughts is-mobile gap",
+      "index": 23,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-footer ng-tns-c4223253065-10 ng-star-inserted",
+      "index": 24,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "id": "5986c38c883d5878"
+      },
+      "classes": "conversation-container message-actions-hover-boundary ng-star-inserted",
+      "index": 25,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "あなたのプロンプト\n\n91 と 97 と 119、それぞれ素数か理由とともに判定してください\n\nGemini の回答\n\n91、97、119の3つの数について、そ",
+      "text_length": 1128
+    },
+    {
+      "attrs": {
+        "data-hveid": "1"
+      },
+      "classes": "response-container response-container-with-gpi ng-tns-c4223253065-16 no-background is-mobile response-container-has-mult",
+      "index": 26,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "Gemini の回答\n\n91、97、119の3つの数について、それぞれ素数かどうかの判定と、その理由を解説します。\n\n結論から言うと、素数は97のみで、91と1",
+      "text_length": 1050
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-header ng-tns-c4223253065-16 ng-star-inserted",
+      "index": 27,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-header-controls ng-tns-c4223253065-16",
+      "index": 28,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-header-status ng-tns-c4223253065-16",
+      "index": 29,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-header-processing-state ng-tns-c4223253065-16",
+      "index": 30,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {
+        "data-hveid": "2"
+      },
+      "classes": "presented-response-container ng-tns-c4223253065-16",
+      "index": 31,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "Gemini の回答\n\n91、97、119の3つの数について、それぞれ素数かどうかの判定と、その理由を解説します。\n\n結論から言うと、素数は97のみで、91と1",
+      "text_length": 1050
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-content ng-tns-c4223253065-16 is-mobile has-thoughts",
+      "index": 32,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "Gemini の回答\n\n91、97、119の3つの数について、それぞれ素数かどうかの判定と、その理由を解説します。\n\n結論から言うと、素数は97のみで、91と1",
+      "text_length": 1050
+    },
+    {
+      "attrs": {},
+      "classes": "response-content ng-tns-c4223253065-16",
+      "index": 33,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "Gemini の回答\n\n91、97、119の3つの数について、それぞれ素数かどうかの判定と、その理由を解説します。\n\n結論から言うと、素数は97のみで、91と1",
+      "text_length": 1050
+    },
+    {
+      "attrs": {},
+      "classes": "response-footer is-mobile gap has-thoughts complete",
+      "index": 34,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "response-container-footer ng-tns-c4223253065-16 ng-star-inserted",
+      "index": 35,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "leading-actions-wrapper ng-tns-c761892454-3 has-model-picker simplified-mobile ng-star-inserted",
+      "index": 36,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "",
+      "text_length": 0
+    },
+    {
+      "attrs": {},
+      "classes": "cdk-describedby-message-container cdk-visually-hidden",
+      "index": 37,
+      "strategy": "class-response-or-message",
+      "tag": "div",
+      "text_head": "メニューを開くチャットを新規作成マイクを使用プロンプトをコピー良い回答悪い回答共有とエクスポート回答をコピーその他プロンプトを編集やり直す",
+      "text_length": 69
+    }
+  ],
+  "captured_at": "2026-05-26T07:03:38.677Z",
+  "probes": {
+    "all_button_aria_labels": [
+      {
+        "aria_label": "メインメニュー",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "モード選択ツールを開く（現在のモデル: Flash 拡張）",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": "Flash\n拡張"
+      },
+      {
+        "aria_label": "読み上げる",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "新しいチャット",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "会話アクションのメニューを開く",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "サイドバーを開く",
+        "data_test_id": "side-nav-sparkle-button",
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "サイドバーを閉じる",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "「ノートブック」を切り替える",
+        "data_test_id": "expandable-section-toggle",
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": "ノートブック"
+      },
+      {
+        "aria_label": "「最近」を切り替える",
+        "data_test_id": "expandable-section-toggle",
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": "最近"
+      },
+      {
+        "aria_label": "設定",
+        "data_test_id": "mavatar-footer-settings-button",
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "プロンプトをコピー",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "良い回答",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "悪い回答",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "共有とエクスポート",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "コピー",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "他のオプションを表示",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "プロンプトをコピー",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "良い回答",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "悪い回答",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "共有とエクスポート",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "コピー",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "他のオプションを表示",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "プロンプトをコピー",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "編集",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "良い回答",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "悪い回答",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "やり直す",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "共有とエクスポート",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "コピー",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "他のオプションを表示",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "アップロードとツール",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "マイク",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      },
+      {
+        "aria_label": "プロンプトを送信",
+        "data_test_id": null,
+        "disabled": false,
+        "mat_icon": "",
+        "text_head": ""
+      }
+    ],
+    "aria_live_elements": [
+      {
+        "aria_live": "off",
+        "attrs": {
+          "aria-busy": "false",
+          "aria-live": "off",
+          "id": "model-response-message-contentr_4981448bf9d8d1ff"
+        },
+        "classes": "markdown markdown-main-panel stronger enable-updated-hr-color",
+        "tag": "div",
+        "text_head": "結論から申し上げますと、127は素数です。\n\nその理由を数学的な判定方法を交えて分かりやすく説明します。\n\n素数である理由\n\n素数とは、「1とその数自身以外に正",
+        "text_length": 546
+      },
+      {
+        "aria_live": "off",
+        "attrs": {
+          "aria-busy": "false",
+          "aria-live": "off",
+          "id": "model-response-message-contentr_61043b4374df9a1e"
+        },
+        "classes": "markdown markdown-main-panel stronger enable-updated-hr-color",
+        "tag": "div",
+        "text_head": "結論から申し上げますと、127は素数です。\n\nその理由を、数学的な判定アルゴリズム（試し割り法）を交えて分かりやすく解説します。\n\n素数である理由\n\n素数とは、",
+        "text_length": 583
+      },
+      {
+        "aria_live": "polite",
+        "attrs": {
+          "aria-busy": "false",
+          "aria-live": "polite",
+          "id": "model-response-message-contentr_5986c38c883d5878"
+        },
+        "classes": "markdown markdown-main-panel stronger enable-updated-hr-color",
+        "tag": "div",
+        "text_head": "91、97、119の3つの数について、それぞれ素数かどうかの判定と、その理由を解説します。\n\n結論から言うと、素数は97のみで、91と119は合成数（素数ではな",
+        "text_length": 1038
+      },
+      {
+        "aria_live": "assertive",
+        "attrs": {
+          "aria-atomic": "true",
+          "aria-live": "assertive",
+          "id": "cdk-live-announcer-0"
+        },
+        "classes": "cdk-live-announcer-element cdk-visually-hidden",
+        "tag": "div",
+        "text_head": "",
+        "text_length": 0
+      }
+    ],
+    "bot_challenge": {
+      "cloudflare_iframe": false,
+      "recaptcha_iframe": false,
+      "title": "127は素数である理由 - Google Gemini"
+    },
+    "composer_candidates": [
+      {
+        "attrs": {},
+        "classes": "text-input-field_textarea ql-container ql-bubble ng-tns-c761892454-3 simplified-input simplified-mobile-input ng-untouch",
+        "tag": "rich-textarea",
+        "text_head": "",
+        "text_length": 0
+      },
+      {
+        "attrs": {
+          "aria-label": "Gemini へのプロンプトを入力",
+          "aria-multiline": "true",
+          "data-gramm": "false",
+          "data-placeholder": "Gemini に相談",
+          "role": "textbox"
+        },
+        "classes": "ql-editor textarea new-input-ui ql-blank",
+        "tag": "div",
+        "text_head": "",
+        "text_length": 0
+      },
+      {
+        "attrs": {},
+        "classes": "ql-clipboard",
+        "tag": "div",
+        "text_head": "",
+        "text_length": 0
+      }
+    ],
+    "model_ui_candidates": [
+      {
+        "attrs": {
+          "aria-label": "モード選択ツールを開く（現在のモデル: Flash 拡張）"
+        },
+        "classes": "mdc-button mat-mdc-button-base mat-badge mat-mdc-button mat-unthemed mat-badge-overlap mat-badge-above mat-badge-after m",
+        "tag": "button",
+        "text_head": "Flash\n拡張",
+        "text_length": 8
+      }
+    ],
+    "stop_button_candidates": [],
+    "thinking_candidates": [
+      {
+        "attrs": {
+          "data-test-id": "logo-pill-label-container"
+        },
+        "classes": "logo-pill-label-container thinking-level-enabled lm-redesign-enabled ng-star-inserted",
+        "match": "attr/class",
+        "tag": "div",
+        "text_head": "Flash\n拡張",
+        "text_length": 8
+      },
+      {
+        "attrs": {},
+        "classes": "response-container-content ng-tns-c4223253065-8 has-thoughts is-mobile",
+        "match": "attr/class",
+        "tag": "div",
+        "text_head": "Gemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を数学的な判定方法を交えて分かりやすく説明します。\n\n素数である理由\n\n素数とは、",
+        "text_length": 558
+      },
+      {
+        "attrs": {},
+        "classes": "model-response-text has-thoughts is-mobile processing-state-visible enable-2026q1-formatting-improvements ng-star-insert",
+        "match": "attr/class",
+        "tag": "structured-content-container",
+        "text_head": "結論から申し上げますと、127は素数です。\n\nその理由を数学的な判定方法を交えて分かりやすく説明します。\n\n素数である理由\n\n素数とは、「1とその数自身以外に正",
+        "text_length": 546
+      },
+      {
+        "attrs": {},
+        "classes": "response-footer complete has-thoughts is-mobile gap",
+        "match": "attr/class",
+        "tag": "div",
+        "text_head": "",
+        "text_length": 0
+      },
+      {
+        "attrs": {},
+        "classes": "response-container-content ng-tns-c4223253065-10 has-thoughts is-mobile",
+        "match": "attr/class",
+        "tag": "div",
+        "text_head": "Gemini の回答\n\n結論から申し上げますと、127は素数です。\n\nその理由を、数学的な判定アルゴリズム（試し割り法）を交えて分かりやすく解説します。\n\n素数",
+        "text_length": 595
+      },
+      {
+        "attrs": {},
+        "classes": "model-response-text has-thoughts is-mobile processing-state-visible enable-2026q1-formatting-improvements ng-star-insert",
+        "match": "attr/class",
+        "tag": "structured-content-container",
+        "text_head": "結論から申し上げますと、127は素数です。\n\nその理由を、数学的な判定アルゴリズム（試し割り法）を交えて分かりやすく解説します。\n\n素数である理由\n\n素数とは、",
+        "text_length": 583
+      },
+      {
+        "attrs": {},
+        "classes": "response-footer complete has-thoughts is-mobile gap",
+        "match": "attr/class",
+        "tag": "div",
+        "text_head": "",
+        "text_length": 0
+      },
+      {
+        "attrs": {},
+        "classes": "response-container-content ng-tns-c4223253065-16 is-mobile has-thoughts",
+        "match": "attr/class",
+        "tag": "div",
+        "text_head": "Gemini の回答\n\n91、97、119の3つの数について、それぞれ素数かどうかの判定と、その理由を解説します。\n\n結論から言うと、素数は97のみで、91と1",
+        "text_length": 1050
+      },
+      {
+        "attrs": {},
+        "classes": "model-response-text is-mobile processing-state-visible enable-2026q1-formatting-improvements ng-star-inserted has-though",
+        "match": "attr/class",
+        "tag": "structured-content-container",
+        "text_head": "91、97、119の3つの数について、それぞれ素数かどうかの判定と、その理由を解説します。\n\n結論から言うと、素数は97のみで、91と119は合成数（素数ではな",
+        "text_length": 1038
+      },
+      {
+        "attrs": {},
+        "classes": "response-footer is-mobile gap has-thoughts complete",
+        "match": "attr/class",
+        "tag": "div",
+        "text_head": "",
+        "text_length": 0
+      }
+    ]
+  },
+  "target": "gemini",
+  "url": "https://gemini.google.com/app/81d85bd9627270a8?hl=ja"
+}
