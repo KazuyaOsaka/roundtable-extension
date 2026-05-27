@@ -1,39 +1,32 @@
 // content_scripts/gemini.js — gemini.google.com 用 Content Script
 // ============================================================
-// Phase 3b Step1: 調査専用（DOM 構造の採取に特化）。
+// Phase 3b Step3: 送信パイプライン実装（Thinking-aware）。
 //
-//   ルーティングは Phase 3a Step1 で target 化済みのため、Gemini 追加は
-//   AI_TARGETS への 1 エントリ + 対象 AI セレクタの選択肢追加だけで済む。
-//   この gemini.js は ChatGPT の Step2（調査専用）と同型:
-//     - 二重ロードガード + ping（疎通確認）
-//     - 手動 DOM ロガー（60 秒 MutationObserver）
-//     - Gemini 構造スナップショット（ロガー停止時に自動採取して
-//       assistant_snapshot_* に保存。Kazuya は claude/chatgpt と同手順）
+//   含むもの:
+//     - 二重ロードガード + ping（Step1 から維持）
+//     - 送信パイプライン（入力欄注入 → 送信 → 応答完了検知 → 抽出）
+//       claude/chatgpt のアーキを移植し、Step2 確定の Gemini セレクタに差替え
+//     - Thinking 検知（仕様書 v0.5 §12.1.1 を Gemini に適用）:
+//       ライブ思考表示 [data-test-id="thinking-overlay-content"] /
+//       .thinking-dots-animation を検知し、無音タイムアウトをリセット
+//     - 調査ツール（手動 DOM ロガー + ストリーミングSS + 構造スナップ）を維持
 //
-//   Step1b 強化（思考表示の確定用）:
-//     childList observer は Gemini の characterData ストリーム/属性切替を
-//     拾えず、初回採取で停止ボタン・Show thinking が完全に空振りした。
-//     対策として「ストリーミングスナップショット」を生成中に間隔ポーリング
-//     採取し（dom_log.stream_snapshots に格納）、停止ボタンの現在状態 /
-//     <model-thoughts> / 思考系クラスを可視化する。送信パイプラインは
-//     依然 notImplemented（Step3 送り）＝本番挙動・他社への影響はゼロ。
+//   Step2 確定セレクタ:
+//     - 入力 : rich-textarea .ql-editor[role="textbox"]（Quill エディタ）
+//     - 送信 : [data-test-id="send-button-container"] button[aria-label="プロンプトを送信"]
+//     - 停止 : 同コンテナ button[aria-label="回答を停止"]（送信⇔停止が aria 切替）
+//     - 抽出 : 最後の model-response 内 .markdown-main-panel（プレフィックス無し）
+//     - 思考 : [data-test-id="thinking-overlay-content"] / .thinking-dots-animation
+//     - dedup: 保険（完了応答 aria-live=off で本文の二重 render 無し = chatgpt 同型）
 //
-//   含まないもの（意図的、Step3 送り）:
-//     - 送信パイプライン（注入 / 送信 / 応答抽出）
-//     send_to_gemini は notImplemented を明示返却する。
+//   Step3 動作確認の重点:
+//     - Quill での改行注入（fix5 の改行二重化が再発しないか）
+//     - 停止ボタン出現→消滅 + A1 安定化で完了検知
+//     - Gemini 10連続 / Claude・ChatGPT リグレッション
 //
-//   調査の主目的:
-//     1. "Show thinking" / 思考中表示の確実なセレクタ採取
-//        （Gemini 2.5 系の思考表示。仕様書 §12.1 の thinking 検知方針を
-//         Gemini にも適用するため。ChatGPT で実証済みの戦略を踏襲）
-//     2. 入力欄 / 送信・停止ボタン / 応答ブロック / モデル選択 UI /
-//        aria-live 二重 render の有無（claude=あり / chatgpt=なし、
-//        Gemini はどちらか）/ bot 検知（Google は reCAPTCHA の可能性）
-//
-//   ダウンスコープ判断: 採取で Gemini DOM が不安定そうなら、2 社
-//   （Claude+ChatGPT）で Phase 4 へ（ロードマップ §ピボット判断）。
-//
-//   ログは最初からタグ付き（[Gemini][Init/DOM/Snapshot/Ping]）。
+//   claude.js / chatgpt.js は無変更（リグレッション源なし）。
+//   ログは最初からタグ付き（[Gemini][Init/Send/Inject/Submit/Wait/A1/A3/
+//   Extract/C1/CF/DOM/Snapshot/AutoLog]）。
 // ============================================================
 
 if (window.__roundtableGeminiLoaded__) {
@@ -62,6 +55,970 @@ function initGeminiContentScript() {
           ? console.warn
           : console.log;
     fn(`[Roundtable][Gemini][${level}]`, message);
+  }
+
+  function rand(min, max) {
+    return min + Math.random() * (max - min);
+  }
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  // ============================================================
+  // セレクタ（Phase 3b Step2 採取で確定。Gemini は data-test-id +
+  // Web Component タグ + aria-label の三重で堅牢。優先順位は claude.js
+  // A2 原則に準拠: aria-label / data-* / role / tag+属性 / class）
+  // ============================================================
+
+  // 入力欄 = Quill エディタ（.ql-editor）。Claude(TipTap)/ChatGPT(ProseMirror)
+  // と別系統。clipboard-paste 主軸で注入（fix5 の改行二重化検証式を移植）。
+  const INPUT_SELECTORS = [
+    'rich-textarea .ql-editor[role="textbox"]',
+    '.ql-editor[role="textbox"]',
+    '[aria-label="Gemini へのプロンプトを入力"]',
+    "rich-textarea .ql-editor",
+    '.ql-editor[contenteditable="true"]',
+    ".ql-editor",
+  ];
+
+  // 送信ボタン。送信⇔停止は send-button-container 内の同一ノードで
+  // aria-label が「プロンプトを送信」⇔「回答を停止」に切替わる（Step2 確定、
+  // ChatGPT の testid 切替と同型）。
+  const SUBMIT_SELECTORS = [
+    '[data-test-id="send-button-container"] button[aria-label="プロンプトを送信"]',
+    'button[aria-label="プロンプトを送信"]',
+    'button[aria-label="Send message"]',
+    'button[aria-label="Submit"]',
+  ];
+
+  const STOP_BUTTON_ARIA_LABELS = [
+    "回答を停止",
+    "応答を停止",
+    "生成を停止",
+    "Stop response",
+    "Stop generating",
+  ];
+  const STOP_BUTTON_SELECTORS = [
+    ...STOP_BUTTON_ARIA_LABELS.map((l) => `button[aria-label="${l}"]`),
+    '[data-test-id="send-button-container"] button[aria-label*="停止"]',
+  ];
+
+  // bot 検知。Step2 採取では gemini.google.com に reCAPTCHA/Cloudflare の
+  // 痕跡なし。Google は異常時に reCAPTCHA / sorry ページを出しうるので保守的に残す。
+  const BOT_CHALLENGE_SELECTORS = [
+    'iframe[src*="recaptcha"]',
+    'iframe[title*="recaptcha" i]',
+    'iframe[src*="challenges.cloudflare.com"]',
+    "div.g-recaptcha",
+    "form#captcha-form",
+  ];
+  const BOT_CHALLENGE_TITLE_PATTERNS = [
+    "通常とは異なる",
+    "unusual traffic",
+    "Just a moment",
+    "確認中",
+  ];
+
+  // クォータ枯渇 / 一時エラーの文言（best-effort。実機で精緻化。検知しても
+  // ハングさせず error 返却）。
+  const ERROR_TEXT_PATTERNS = [
+    /制限に達し/,
+    /上限に達し/,
+    /利用上限/,
+    /しばらくしてから/,
+    /現在ご利用いただけません/,
+    /reached your .{0,40}limit/i,
+    /usage (?:cap|limit)/i,
+    /too many requests/i,
+    /something went wrong/i,
+    /エラーが発生しました/,
+    /問題が発生しました/,
+  ];
+
+  function findFirst(selectors) {
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (el) return { element: el, selector: sel };
+    }
+    return null;
+  }
+
+  function findStopButton() {
+    for (const sel of STOP_BUTTON_SELECTORS) {
+      const el = document.querySelector(sel);
+      if (el) return { element: el, selector: sel };
+    }
+    return null;
+  }
+
+  function findSubmitFallback() {
+    // 入力欄から祖先を辿り、send-button-container 内の送信ボタンを探す。
+    // 停止ボタン（生成中に aria-label 切替で出現）は除外。
+    const inputResult = findFirst(INPUT_SELECTORS);
+    if (!inputResult) return null;
+    let container = inputResult.element;
+    for (let depth = 0; depth < 10 && container; depth++) {
+      const scoped = container.querySelector(
+        '[data-test-id="send-button-container"] button',
+      );
+      if (scoped) {
+        const al = scoped.getAttribute("aria-label") || "";
+        if (!STOP_BUTTON_ARIA_LABELS.some((l) => al.includes(l)))
+          return {
+            element: scoped,
+            selector: "fallback:send-button-container",
+          };
+      }
+      for (const btn of container.querySelectorAll("button,[role='button']")) {
+        const al = btn.getAttribute("aria-label") || "";
+        if (STOP_BUTTON_ARIA_LABELS.some((l) => al.includes(l))) continue;
+        if (/送信|Send|Submit/i.test(al))
+          return { element: btn, selector: "fallback:send-by-aria" };
+      }
+      container = container.parentElement;
+    }
+    return null;
+  }
+
+  function detectBotChallenge() {
+    for (const sel of BOT_CHALLENGE_SELECTORS) {
+      if (document.querySelector(sel))
+        return { detected: true, by: `selector:${sel}` };
+    }
+    const title = document.title || "";
+    for (const pat of BOT_CHALLENGE_TITLE_PATTERNS) {
+      if (title.includes(pat)) return { detected: true, by: `title:"${pat}"` };
+    }
+    return { detected: false };
+  }
+
+  function detectErrorText() {
+    const scopes = [];
+    const responses = document.querySelectorAll("model-response");
+    if (responses.length > 0) scopes.push(responses[responses.length - 1]);
+    const main = document.querySelector("main") || document.body;
+    if (main) scopes.push(main);
+    for (const scope of scopes) {
+      const text = (scope.innerText || "").slice(-600);
+      for (const re of ERROR_TEXT_PATTERNS) {
+        if (re.test(text)) return { detected: true, pattern: String(re) };
+      }
+    }
+    return { detected: false };
+  }
+
+  // ============================================================
+  // Thinking 検知（Step2 確定 / 仕様書 v0.5 §12.1.1 を Gemini に適用）
+  //   生成中（思考＋ストリーミング）に出現するライブ思考表示:
+  //     [data-test-id="thinking-overlay-content"] / .thinking-dots-animation /
+  //     .thinking-container（英語ヘッドライン "Analyzing…" 等）。
+  //   思考中はテキストが増えないため、これを無音タイムアウトのリセット信号に
+  //   使う（ChatGPT で実証した「Phase 2 回収点」の Gemini 版）。
+  //   ※ Gemini の思考ヘッドラインは任意テキストなので固定正規表現は使わず、
+  //     セレクタ主体で検知する。
+  // ============================================================
+
+  const THINKING_INDICATOR_SELECTORS = [
+    '[data-test-id="thinking-overlay-content"]',
+    ".thinking-dots-animation",
+    ".thinking-container",
+    '[class*="animated-thinking"]',
+  ];
+
+  function findThinkingIndicator() {
+    for (const sel of THINKING_INDICATOR_SELECTORS) {
+      const el = document.querySelector(sel);
+      if (el) return { element: el, selector: sel };
+    }
+    return null;
+  }
+
+  // ============================================================
+  // テキスト注入（claude.js/chatgpt.js から移植。挙動同一。Quill も
+  // clipboard-paste 優位の見込み。3 手段フォールバック）
+  // ============================================================
+
+  function getInputText(input) {
+    return (input.innerText || input.textContent || input.value || "").replace(
+      /[​-‍﻿]/g,
+      "",
+    );
+  }
+
+  // Phase 3a fix5 移植: 注入成否の検証専用の正規化。ProseMirror/Quill が
+  // 改行 \n を段落化し innerText が "一行目\n\n二行目" になると素の
+  // `.includes(text)` が改行数差で false になり「注入失敗」と誤判定する。
+  // 改行ランを 1 つに畳んで比較。単行には影響しない no-op。
+  // ※ Quill で再発するかは Step3 動作確認の重点項目。
+  function normalizeForInjectCheck(s) {
+    return (s || "").replace(/\r\n?/g, "\n").replace(/\n+/g, "\n").trim();
+  }
+  function injectionTextLanded(actual, expected) {
+    return normalizeForInjectCheck(actual).includes(
+      normalizeForInjectCheck(expected),
+    );
+  }
+
+  async function injectViaBeforeInput(input, text) {
+    input.focus();
+    await sleep(40);
+    for (const ch of text) {
+      input.dispatchEvent(
+        new InputEvent("beforeinput", {
+          inputType: "insertText",
+          data: ch,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await sleep(rand(30, 90));
+    }
+    await sleep(120);
+    return injectionTextLanded(getInputText(input), text);
+  }
+
+  async function injectViaPaste(input, text) {
+    input.focus();
+    await sleep(40);
+    const dt = new DataTransfer();
+    dt.setData("text/plain", text);
+    input.dispatchEvent(
+      new ClipboardEvent("paste", {
+        clipboardData: dt,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await sleep(150);
+    return injectionTextLanded(getInputText(input), text);
+  }
+
+  async function injectViaExecCommand(input, text) {
+    input.focus();
+    await sleep(40);
+    let ok = false;
+    try {
+      ok = document.execCommand("insertText", false, text);
+    } catch (_e) {
+      ok = false;
+    }
+    await sleep(150);
+    return ok && injectionTextLanded(getInputText(input), text);
+  }
+
+  const INJECT_METHODS = [
+    { name: "beforeinput-per-char", fn: injectViaBeforeInput },
+    { name: "clipboard-paste", fn: injectViaPaste },
+    { name: "execCommand-insertText", fn: injectViaExecCommand },
+  ];
+
+  async function clickSubmit(button) {
+    const rect = button.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const baseOpts = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX: cx,
+      clientY: cy,
+      button: 0,
+    };
+    const pointerOpts = {
+      ...baseOpts,
+      buttons: 1,
+      pointerType: "mouse",
+      pointerId: 1,
+      isPrimary: true,
+    };
+    try {
+      button.dispatchEvent(new PointerEvent("pointerdown", pointerOpts));
+    } catch (_e) {
+      button.dispatchEvent(new MouseEvent("mousedown", baseOpts));
+    }
+    await sleep(rand(20, 60));
+    try {
+      button.dispatchEvent(new PointerEvent("pointerup", pointerOpts));
+    } catch (_e) {
+      button.dispatchEvent(new MouseEvent("mouseup", baseOpts));
+    }
+    await sleep(rand(10, 30));
+    button.dispatchEvent(new MouseEvent("click", baseOpts));
+  }
+
+  // ============================================================
+  // 応答テキスト抽出（Step2 確定）
+  //   最後の model-response 内の .markdown-main-panel が実本文
+  //   （「Gemini の回答」プレフィックス無し）。dedup(Y) は保険として移植し
+  //   observable に保つ（Gemini は完了応答 aria-live=off で本文の常時二重
+  //   render 無し → chatgpt 同型で不発の見込み）。
+  // ============================================================
+
+  const ASSISTANT_TEXT_PREFIXES = [
+    /^Gemini の回答\s*/,
+    /^Gemini said:\s*/,
+    /^Gemini\s*\n+/,
+  ];
+  const ASSISTANT_TEXT_SUFFIX_PATTERNS = [
+    /\n\s*(コピー|Copy|共有とエクスポート|Share|編集|Edit|やり直す|Regenerate|良い回答|悪い回答|他のオプションを表示)\s*$/,
+  ];
+
+  function normalizeForCompare(s) {
+    return s
+      .replace(/[​-‍﻿]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  const TRAILING_DEDUP_TRIM_RE = /[…。．、！？\.\s」』）)"']+$/u;
+  function trimTrailingDedupMarkers(s) {
+    return s.replace(TRAILING_DEDUP_TRIM_RE, "");
+  }
+
+  function cleanAssistantText(raw) {
+    if (!raw) return { text: "", dedup: null, diagnostic: null };
+    let text = raw.trim();
+    for (const pat of ASSISTANT_TEXT_PREFIXES) text = text.replace(pat, "");
+
+    let dedup = null;
+    let diagnostic = null;
+    const parts = text
+      .split(/\n\n+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length >= 2) {
+      const norm0 = normalizeForCompare(parts[0]);
+      const norm1 = normalizeForCompare(parts[1]);
+      let keepIdx = null;
+      let dedupKind = null;
+      let prefixIdx = null;
+      if (norm0 === norm1) {
+        keepIdx = 0;
+        dedupKind = "exact";
+      } else if (norm1.startsWith(norm0)) {
+        keepIdx = 1;
+        dedupKind = "prefix";
+        prefixIdx = 0;
+      } else if (norm0.startsWith(norm1)) {
+        keepIdx = 0;
+        dedupKind = "prefix";
+        prefixIdx = 1;
+      } else {
+        const trim0 = trimTrailingDedupMarkers(norm0);
+        const trim1 = trimTrailingDedupMarkers(norm1);
+        if (trim0.length > 0 && trim1.length > 0) {
+          if (trim0 === trim1) {
+            keepIdx = norm0.length >= norm1.length ? 0 : 1;
+            dedupKind = "exact";
+          } else if (norm1.startsWith(trim0)) {
+            keepIdx = 1;
+            dedupKind = "prefix";
+            prefixIdx = 0;
+          } else if (norm0.startsWith(trim1)) {
+            keepIdx = 0;
+            dedupKind = "prefix";
+            prefixIdx = 1;
+          }
+        }
+      }
+      if (keepIdx !== null) {
+        const kept = parts[keepIdx];
+        const dropped = parts[keepIdx === 0 ? 1 : 0];
+        text =
+          kept +
+          (parts.length > 2 ? "\n\n" + parts.slice(2).join("\n\n") : "");
+        dedup = {
+          kind: dedupKind,
+          prefix_idx: prefixIdx,
+          kept_length: kept.length,
+          dropped_length: dropped.length,
+        };
+      } else if (parts[0].length >= 30 && parts[1].length >= 30) {
+        diagnostic = {
+          num_parts: parts.length,
+          part_lengths: parts.slice(0, 4).map((p) => p.length),
+          part_heads: parts.slice(0, 2).map((p) => p.slice(0, 60)),
+        };
+      }
+    }
+
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const pat of ASSISTANT_TEXT_SUFFIX_PATTERNS) {
+        const newText = text.replace(pat, "").trim();
+        if (newText !== text) {
+          text = newText;
+          changed = true;
+        }
+      }
+    }
+    return { text: text.trim(), dedup, diagnostic };
+  }
+
+  function extractLatestAssistantMessage() {
+    const meta = { strategy_hit: null };
+    // 戦略1: 最後の model-response 内の .markdown-main-panel（実本文・無プレフィックス）
+    const responses = document.querySelectorAll("model-response");
+    if (responses.length > 0) {
+      const last = responses[responses.length - 1];
+      const panel =
+        last.querySelector(".markdown-main-panel") ||
+        last.querySelector("message-content .markdown") ||
+        last.querySelector("message-content");
+      const rawEl = panel || last;
+      const raw = rawEl.innerText || "";
+      const { text, dedup, diagnostic } = cleanAssistantText(raw);
+      if (text) {
+        meta.strategy_hit = panel
+          ? "model-response>markdown-main-panel"
+          : "model-response";
+        return {
+          text,
+          selector: panel
+            ? "model-response .markdown-main-panel"
+            : "model-response",
+          raw_length: raw.length,
+          dedup,
+          diagnostic,
+          extractionMeta: meta,
+        };
+      }
+    }
+    // 戦略2: 最後の message-content
+    const mcs = document.querySelectorAll("message-content");
+    if (mcs.length > 0) {
+      const last = mcs[mcs.length - 1];
+      const raw = last.innerText || "";
+      const { text, dedup, diagnostic } = cleanAssistantText(raw);
+      if (text) {
+        meta.strategy_hit = "message-content-fallback";
+        return {
+          text,
+          selector: "fallback:message-content",
+          raw_length: raw.length,
+          dedup,
+          diagnostic,
+          extractionMeta: meta,
+        };
+      }
+    }
+    // 戦略3: .markdown-main-panel の最後（model-response が取れない場合の保険）
+    const panels = document.querySelectorAll(".markdown-main-panel");
+    if (panels.length > 0) {
+      const last = panels[panels.length - 1];
+      const raw = last.innerText || "";
+      const { text, dedup, diagnostic } = cleanAssistantText(raw);
+      if (text) {
+        meta.strategy_hit = "markdown-main-panel-fallback";
+        return {
+          text,
+          selector: "fallback:.markdown-main-panel",
+          raw_length: raw.length,
+          dedup,
+          diagnostic,
+          extractionMeta: meta,
+        };
+      }
+    }
+    return {
+      text: null,
+      selector: null,
+      raw_length: 0,
+      dedup: null,
+      diagnostic: null,
+      extractionMeta: meta,
+    };
+  }
+
+  // ============================================================
+  // 応答完了検知（claude/chatgpt A1+A3 を移植し Gemini 用に調整）
+  //   一次: 停止ボタン「回答を停止」出現 → 消滅
+  //   活動: 抽出テキスト変化 / ライブ思考表示（thinking-overlay-content 等）
+  //   無音タイムアウト + バックストップ + 消滅後の安定化判定
+  // ============================================================
+
+  async function waitForResponseComplete(settings = {}) {
+    const silenceTimeoutSec =
+      typeof settings.silence_timeout_sec === "number" &&
+      settings.silence_timeout_sec >= 1
+        ? settings.silence_timeout_sec
+        : 30;
+    const SILENCE_TIMEOUT_MS = silenceTimeoutSec * 1000;
+    const BACKSTOP_TIMEOUT_MS =
+      typeof settings.backstop_timeout_ms === "number" &&
+      settings.backstop_timeout_ms >= SILENCE_TIMEOUT_MS
+        ? settings.backstop_timeout_ms
+        : 600000;
+
+    // 1) 停止ボタン出現を待つ（送信→応答開始）
+    const appearStart = Date.now();
+    let firstHit = null;
+    while (!(firstHit = findStopButton())) {
+      if (Date.now() - appearStart > 15000) {
+        const err = detectErrorText();
+        return {
+          ok: false,
+          error: err.detected
+            ? `応答が開始されませんでした。エラー/制限の可能性 (${err.pattern})。`
+            : "停止ボタン（回答を停止）が15秒以内に出現しませんでした。応答開始失敗の可能性。",
+          limit: err.detected || undefined,
+        };
+      }
+      await sleep(150);
+    }
+    logPanel(
+      "info",
+      `[Wait] 停止ボタン出現 → 応答中 (selector=${firstHit.selector})`,
+    );
+    logPanel(
+      "info",
+      `[A3] 無音タイムアウト=${silenceTimeoutSec}秒、バックストップ=${Math.round(BACKSTOP_TIMEOUT_MS / 1000)}秒`,
+    );
+
+    // 2) 停止ボタン消滅を待つ + 無音タイムアウト判定
+    const startWait = Date.now();
+    let lastHeartbeat = startWait;
+    let lastActivityAt = startWait;
+    let lastObservedText = extractLatestAssistantMessage().text || "";
+    let lastThinkingLogAt = 0;
+    let thinkingHitCount = 0;
+    while (findStopButton()) {
+      const now = Date.now();
+      const elapsed = now - startWait;
+
+      if (elapsed > BACKSTOP_TIMEOUT_MS) {
+        return {
+          ok: false,
+          error: `応答完了タイムアウト（バックストップ ${Math.round(BACKSTOP_TIMEOUT_MS / 1000)}秒 経過）`,
+          backstop: true,
+        };
+      }
+
+      const curText = extractLatestAssistantMessage().text || "";
+      if (curText !== lastObservedText) {
+        lastObservedText = curText;
+        lastActivityAt = now;
+      }
+
+      // ライブ思考表示（テキストが増えない長考を救う）
+      const thinking = findThinkingIndicator();
+      if (thinking) {
+        lastActivityAt = now;
+        thinkingHitCount++;
+        if (now - lastThinkingLogAt >= 10000) {
+          lastThinkingLogAt = now;
+          logPanel(
+            "info",
+            `[A3] Thinking 検出 (selector=${thinking.selector})、無音タイムアウトをリセット`,
+          );
+        }
+      }
+
+      const silenceMs = now - lastActivityAt;
+      if (silenceMs > SILENCE_TIMEOUT_MS) {
+        return {
+          ok: false,
+          error: `無音タイムアウト (${silenceTimeoutSec}秒 活動なし)。再試行 / スキップ / 中断を選んでください。`,
+          silenceTimeout: true,
+          thinkingHitCount,
+        };
+      }
+
+      if (now - lastHeartbeat >= 10000) {
+        lastHeartbeat = now;
+        logPanel(
+          "info",
+          `[Wait] 応答中... ${Math.round(elapsed / 1000)}秒経過 (無音 ${Math.round(silenceMs / 1000)}秒, Thinking ${thinkingHitCount}回)`,
+        );
+      }
+      await sleep(300);
+    }
+
+    // 3) 消滅の安定化（瞬間的再出現の保険）
+    await sleep(500);
+    if (findStopButton()) {
+      logPanel("warn", "[Wait] 停止ボタンが再出現。応答継続として待機を再開。");
+      return await waitForResponseComplete(settings);
+    }
+    logPanel("info", "[A1] 停止ボタン消滅 → テキスト安定化を確認中...");
+
+    // 4) テキスト安定化判定（claude/chatgpt 実測 2500ms が妥当か Step3 で観測）
+    const STABLE_THRESHOLD_MS = 2500;
+    const STABLE_POLL_MS = 200;
+    const STABLE_MAX_WAIT_MS = 10000;
+    const stableStartedAt = Date.now();
+    let lastText = extractLatestAssistantMessage().text || "";
+    let stableSince = Date.now();
+    while (Date.now() - stableSince < STABLE_THRESHOLD_MS) {
+      await sleep(STABLE_POLL_MS);
+      const curText = extractLatestAssistantMessage().text || "";
+      if (curText !== lastText) {
+        lastText = curText;
+        stableSince = Date.now();
+      }
+      if (Date.now() - stableStartedAt > STABLE_MAX_WAIT_MS) {
+        logPanel(
+          "warn",
+          `[A1] テキスト安定化判定が ${STABLE_MAX_WAIT_MS}ms で打ち切り。現在のテキストで確定。`,
+        );
+        break;
+      }
+    }
+    logPanel(
+      "ok",
+      `[A1] 応答完了（安定化確認 OK、安定化所要 ${Date.now() - stableStartedAt}ms、Thinking ${thinkingHitCount}回）`,
+    );
+    return { ok: true };
+  }
+
+  // ============================================================
+  // AutoDomLogger（claude/chatgpt A4 を移植。応答セッション中リングバッファ、
+  // エラートリガー時に直近 60 秒を auto_dom_log_* に保存。background の
+  // get_latest_auto_dom_log は prefix 一致で対象 AI 非依存）
+  // ============================================================
+
+  const AUTO_LOG_WINDOW_MS = 60000;
+  const AUTO_LOG_MAX_EVENTS = 2000;
+  const AUTO_LOG_START_DELAY_MS = 1000;
+  const AUTO_LOG_MAX_STORED = 10;
+  const AUTO_LOG_KEY_PREFIX = "auto_dom_log_";
+
+  const autoDomLogger = {
+    running: false,
+    startTime: 0,
+    startWallTime: 0,
+    events: [],
+    observer: null,
+    delayedStartTimer: null,
+    _recordOne(node, type) {
+      if (!this.observer) return;
+      const cat = classifyDomNode(node);
+      if (!cat) return;
+      if (this.events.length >= AUTO_LOG_MAX_EVENTS) {
+        this.events.splice(0, Math.floor(AUTO_LOG_MAX_EVENTS * 0.1));
+      }
+      this.events.push(snapshotDomNode(node, cat, type, this.startTime));
+    },
+    _recordSubtree(node, type) {
+      if (!(node instanceof Element)) return;
+      this._recordOne(node, type);
+      if (typeof node.querySelectorAll !== "function") return;
+      for (const el of node.querySelectorAll(DOM_LOG_CANDIDATE_SELECTOR))
+        this._recordOne(el, type);
+    },
+    start() {
+      if (this.running) return;
+      this.running = true;
+      this.startWallTime = Date.now();
+      this.events = [];
+      this.observer = null;
+      logPanel(
+        "info",
+        `[AutoLog] 自動採取準備（${AUTO_LOG_START_DELAY_MS}ms 後に観察開始）`,
+      );
+      this.delayedStartTimer = setTimeout(() => {
+        if (!this.running) return;
+        this.startTime = performance.now();
+        this.observer = new MutationObserver((mutations) => {
+          for (const m of mutations) {
+            for (const n of m.addedNodes) this._recordSubtree(n, "added");
+            for (const n of m.removedNodes) this._recordSubtree(n, "removed");
+          }
+        });
+        this.observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+        });
+        logPanel("info", "[AutoLog] 自動採取開始（リングバッファ 60秒）");
+      }, AUTO_LOG_START_DELAY_MS);
+    },
+    async save(trigger) {
+      if (!this.running || !this.observer) {
+        logPanel(
+          "info",
+          `[AutoLog] 保存スキップ trigger=${trigger}（観察開始前/未起動）`,
+        );
+        return null;
+      }
+      const nowMs = performance.now() - this.startTime;
+      const windowStart = nowMs - AUTO_LOG_WINDOW_MS;
+      const recentEvents = this.events.filter((e) => e.t_ms >= windowStart);
+      const result = {
+        captured_at: new Date().toISOString(),
+        trigger,
+        target: "gemini",
+        url: window.location.href,
+        window_ms: AUTO_LOG_WINDOW_MS,
+        session_started_at: new Date(this.startWallTime).toISOString(),
+        event_count: recentEvents.length,
+        events: recentEvents,
+      };
+      const key = `${AUTO_LOG_KEY_PREFIX}${Date.now()}_${trigger}`;
+      try {
+        await chrome.storage.local.set({ [key]: result });
+        logPanel(
+          "info",
+          `[AutoLog] 保存 trigger=${trigger}, key=${key}, events=${result.event_count}`,
+        );
+        await this._cleanupOldKeys();
+      } catch (e) {
+        logPanel(
+          "warn",
+          `[AutoLog] 保存失敗: ${e && e.message ? e.message : e}`,
+        );
+      }
+      return { storage_key: key, result };
+    },
+    async _cleanupOldKeys() {
+      try {
+        const all = await chrome.storage.local.get(null);
+        const autoKeys = Object.keys(all)
+          .filter((k) => k.startsWith(AUTO_LOG_KEY_PREFIX))
+          .sort();
+        if (autoKeys.length <= AUTO_LOG_MAX_STORED) return;
+        const toRemove = autoKeys.slice(0, autoKeys.length - AUTO_LOG_MAX_STORED);
+        await chrome.storage.local.remove(toRemove);
+        logPanel(
+          "info",
+          `[AutoLog] 古いキー ${toRemove.length} 件削除（上限 ${AUTO_LOG_MAX_STORED}）`,
+        );
+      } catch (e) {
+        logPanel(
+          "warn",
+          `[AutoLog] 古いキー削除失敗: ${e && e.message ? e.message : e}`,
+        );
+      }
+    },
+    stop(saved) {
+      if (!this.running) return;
+      this.running = false;
+      if (this.delayedStartTimer) {
+        clearTimeout(this.delayedStartTimer);
+        this.delayedStartTimer = null;
+      }
+      if (this.observer) {
+        this.observer.disconnect();
+        this.observer = null;
+      }
+      this.events = [];
+      logPanel(
+        "info",
+        saved
+          ? "[AutoLog] 自動採取終了（エラー時保存済み）"
+          : "[AutoLog] 自動採取終了（保存なし）",
+      );
+    },
+  };
+
+  // ============================================================
+  // 送信パイプライン本体
+  // ============================================================
+
+  async function performSend(text, settings = {}) {
+    if (!text || !text.trim()) {
+      return { ok: false, error: "本文が空です。" };
+    }
+
+    autoDomLogger.start();
+    let autoLogSaved = false;
+    try {
+      // 0. 事前 bot チェック
+      const preBot = detectBotChallenge();
+      if (preBot.detected) {
+        const m = `[CF] bot 検知（送信前）: ${preBot.by}。操作を中止します。`;
+        logPanel("error", m);
+        return { ok: false, error: m, cloudflare: true };
+      }
+
+      // 0.5 応答中チェック（busy preflight。停止ボタン存在 = 応答中）
+      const stopBtn = findStopButton();
+      if (stopBtn) {
+        const m = `Gemini が応答中のため送信できません。完了を待つか gemini.google.com で「回答を停止」を押してください。(detected: ${stopBtn.selector})`;
+        logPanel("warn", `[Send] ${m}`);
+        return { ok: false, error: m, busy: true };
+      }
+
+      // 1. 入力欄
+      const inputResult = findFirst(INPUT_SELECTORS);
+      if (!inputResult) {
+        const m =
+          "[Send] 入力欄が見つかりません（セレクタ全滅）。gemini.google.com が完全にロードされ、思考拡張モデルが選択済みか確認してください。";
+        logPanel("error", m);
+        return { ok: false, error: m };
+      }
+      logPanel("info", `[Send] 入力欄ヒット: ${inputResult.selector}`);
+
+      // 2. 注入（3 手段フォールバック。Quill は clipboard-paste 優位の見込み）
+      let usedInjectMethod = null;
+      for (const method of INJECT_METHODS) {
+        try {
+          if (await method.fn(inputResult.element, text)) {
+            usedInjectMethod = method.name;
+            logPanel("ok", `[Inject] 注入成功: ${method.name}`);
+            break;
+          }
+          logPanel("warn", `[Inject] 注入失敗（本文未反映）: ${method.name}`);
+        } catch (e) {
+          logPanel(
+            "warn",
+            `[Inject] 注入エラー (${method.name}): ${e && e.message ? e.message : e}`,
+          );
+        }
+      }
+      if (!usedInjectMethod) {
+        const m =
+          "[Inject] 注入の3手段すべてに失敗しました。Kazuya に報告してください。";
+        logPanel("error", m);
+        return { ok: false, error: m, usedInputSelector: inputResult.selector };
+      }
+
+      // 3. 送信前ランダム待機
+      const preDelay = rand(200, 600);
+      logPanel(
+        "info",
+        `[Submit] 送信ボタン押下前の待機: ${Math.round(preDelay)}ms`,
+      );
+      await sleep(preDelay);
+
+      // 4. 送信ボタン
+      let submitResult = findFirst(SUBMIT_SELECTORS);
+      if (!submitResult) {
+        const fb = findSubmitFallback();
+        if (fb) {
+          submitResult = fb;
+          logPanel(
+            "info",
+            `[Submit] 送信ボタン: フォールバック取得 (${fb.selector})`,
+          );
+        }
+      }
+      if (!submitResult) {
+        const m = "[Submit] 送信ボタンが見つかりません。";
+        logPanel("error", m);
+        return {
+          ok: false,
+          error: m,
+          usedInputSelector: inputResult.selector,
+          usedInjectMethod,
+        };
+      }
+      if (submitResult.element.disabled) {
+        logPanel(
+          "warn",
+          "[Submit] 送信ボタンが disabled。本文がエディタ内部状態に届いていない可能性。",
+        );
+      } else {
+        logPanel("info", `[Submit] 送信ボタンヒット: ${submitResult.selector}`);
+      }
+
+      // 5. クリック
+      await clickSubmit(submitResult.element);
+      logPanel(
+        "info",
+        "[Submit] 送信ボタン dispatch 完了 (pointerdown→pointerup→click)",
+      );
+
+      // 6. 事後 bot チェック
+      await sleep(800);
+      const postBot = detectBotChallenge();
+      if (postBot.detected) {
+        const m = `[CF] bot 検知（送信後）: ${postBot.by}。Kazuya に報告してください。`;
+        logPanel("error", m);
+        return {
+          ok: false,
+          error: m,
+          cloudflare: true,
+          usedInputSelector: inputResult.selector,
+          usedInjectMethod,
+          usedSubmitSelector: submitResult.selector,
+        };
+      }
+
+      const baseResult = {
+        ok: true,
+        usedInputSelector: inputResult.selector,
+        usedInjectMethod,
+        usedSubmitSelector: submitResult.selector,
+      };
+
+      // 7. 応答完了待機
+      logPanel("info", "[Wait] 応答完了を待機中...");
+      const waitResult = await waitForResponseComplete(settings);
+      if (!waitResult.ok) {
+        let trigger = "wait_failed";
+        if (waitResult.silenceTimeout) trigger = "silence_timeout";
+        else if (waitResult.backstop) trigger = "backstop_timeout";
+        else if (waitResult.limit) trigger = "limit_or_error";
+        else if (waitResult.error && waitResult.error.includes("15秒"))
+          trigger = "stop_button_no_appear";
+        await autoDomLogger.save(trigger);
+        autoLogSaved = true;
+        logPanel("warn", waitResult.error);
+        return {
+          ...baseResult,
+          responseError: waitResult.error,
+          limit: waitResult.limit,
+        };
+      }
+
+      // 8. 抽出
+      await sleep(300);
+      const extracted = extractLatestAssistantMessage();
+      if (!extracted.text) {
+        const m =
+          "[Extract] 応答テキスト抽出失敗（model-response / markdown-main-panel 全滅）。";
+        logPanel("warn", m);
+        await autoDomLogger.save("extract_failed");
+        autoLogSaved = true;
+        return {
+          ...baseResult,
+          responseError: "応答テキスト抽出失敗",
+          extractionMeta: extracted.extractionMeta,
+        };
+      }
+      logPanel(
+        "ok",
+        `[Extract] 応答抽出成功 (selector=${extracted.selector}, ${extracted.text.length}字 / raw ${extracted.raw_length}字)`,
+      );
+
+      // dedup(Y) の発火状況をログ（Gemini は不発の見込み = chatgpt 同型）
+      if (extracted.dedup) {
+        if (extracted.dedup.kind === "prefix") {
+          logPanel(
+            "warn",
+            `[C1] ⚠ prefix 重複検出 → 長い方 (${extracted.dedup.kept_length}字) 採用、短い方 (${extracted.dedup.dropped_length}字) 破棄`,
+          );
+        } else {
+          logPanel(
+            "warn",
+            `[C1] ⚠ 完全一致重複検出 → 統合 (${extracted.dedup.kept_length}字)`,
+          );
+        }
+      } else {
+        logPanel(
+          "info",
+          "[C1] 重複検出: 発火せず（Gemini は完了応答 aria-live=off で二重 render 無し）",
+        );
+        if (extracted.diagnostic) {
+          const d = extracted.diagnostic;
+          logPanel(
+            "info",
+            `[C1:診断] 段落 ${d.num_parts} 個、長さ [${d.part_lengths.join(", ")}]字`,
+          );
+        }
+      }
+
+      return {
+        ...baseResult,
+        responseText: extracted.text,
+        responseSelector: extracted.selector,
+        responseRawLength: extracted.raw_length,
+        responseDedup: extracted.dedup,
+        extractionMeta: extracted.extractionMeta,
+      };
+    } finally {
+      autoDomLogger.stop(autoLogSaved);
+    }
   }
 
   // ============================================================
@@ -588,8 +1545,7 @@ function initGeminiContentScript() {
 
   // ============================================================
   // メッセージリスナ
-  //   ping / start_dom_logger / dom_logger_status : 対応
-  //   send_to_gemini : Step3 で実装。今は notImplemented を明示返却
+  //   ping / send_to_gemini / start_dom_logger / dom_logger_status
   // ============================================================
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -598,6 +1554,17 @@ function initGeminiContentScript() {
     if (msg.type === "ping") {
       sendResponse({ ok: true, url: window.location.href });
       return false;
+    }
+
+    if (msg.type === "send_to_gemini") {
+      performSend(msg.text || "", msg.settings || {})
+        .then(sendResponse)
+        .catch((e) => {
+          const m = `想定外エラー: ${e && e.stack ? e.stack : e}`;
+          logPanel("error", m);
+          sendResponse({ ok: false, error: m });
+        });
+      return true; // async
     }
 
     if (msg.type === "start_dom_logger") {
@@ -621,21 +1588,11 @@ function initGeminiContentScript() {
       return false;
     }
 
-    if (msg.type === "send_to_gemini") {
-      sendResponse({
-        ok: false,
-        error:
-          "gemini.js は Phase 3b Step1（調査専用）です。送信パイプライン（注入/送信/応答抽出）は Step3 で実装予定。現状は ping と手動 DOM ロガーのみ対応。",
-        notImplemented: true,
-      });
-      return false;
-    }
-
     return false;
   });
 
   logPanel(
     "ok",
-    "[Init] gemini.js Step1（調査専用）初期化完了。ping / 手動DOMロガー 対応。送信は Step3。",
+    "[Init] gemini.js Step3 初期化完了。送信パイプライン + Thinking 検知 + 調査ツール 稼働。",
   );
 }
