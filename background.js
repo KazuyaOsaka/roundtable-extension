@@ -97,6 +97,7 @@ async function listAiTabs(targetKey) {
     getCurrentActiveTab(),
   ]);
   const currentTabId = currentTab ? currentTab.id : null;
+  const currentWindowId = currentTab ? currentTab.windowId : null;
   const currentTabIsTarget = !!(
     currentTab &&
     currentTab.url &&
@@ -110,17 +111,29 @@ async function listAiTabs(targetKey) {
       title: t.title || "",
       active: !!t.active,
       windowId: t.windowId,
+      // Step1.5 (Phase 4): 並び順の主キーに使う。Chrome 121+ で利用可。
+      // 未対応環境では undefined → 0 扱いで②を飛ばし③(tabId)で安全動作。
+      lastAccessed: typeof t.lastAccessed === "number" ? t.lastAccessed : 0,
+      // Step1.5: 並び順の最優先キー。同じ Chrome ウィンドウのタブを優先。
+      isCurrentWindow:
+        currentWindowId != null && t.windowId === currentWindowId,
+      // 既存: ★ マーカー表示用（panel の formatTabLabel が参照）。
       isCurrentWindowActive: t.id === currentTabId,
     }))
     .sort((a, b) => {
-      // 1) 現在のウィンドウのアクティブタブ優先
-      if (a.isCurrentWindowActive !== b.isCurrentWindowActive) {
-        return a.isCurrentWindowActive ? -1 : 1;
+      // Step1.5 (Phase 4) の選択ルール:
+      //  旧並び（アクティブ1枚優先 + tabId 昇順）だと、フォーカス外の社で
+      //  別ウィンドウの最古タブが選ばれていた事故（要望①②）を解消する。
+      // 1) 同じウィンドウのタブを最優先（フォーカス外の社も同ウィンドウ内を選ぶ）
+      if (a.isCurrentWindow !== b.isCurrentWindow) {
+        return a.isCurrentWindow ? -1 : 1;
       }
-      // 2) その他ウィンドウのアクティブを次に
-      if (a.active !== b.active) return a.active ? -1 : 1;
-      // 3) id 昇順で安定化
-      return a.id - b.id;
+      // 2) lastAccessed が新しい順（最近触ったタブ）
+      if (a.lastAccessed !== b.lastAccessed) {
+        return b.lastAccessed - a.lastAccessed;
+      }
+      // 3) tabId 大きい順（最近開いたタブ）にフォールバック
+      return b.id - a.id;
     });
 
   return {
@@ -130,6 +143,7 @@ async function listAiTabs(targetKey) {
     currentTabId: currentTabIsTarget ? currentTabId : null,
     currentTabIsTarget,
     currentTabUrl: currentTab ? currentTab.url || null : null,
+    currentWindowId,
   };
 }
 

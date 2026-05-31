@@ -398,14 +398,206 @@
         font-size: 11.5px;
       }
       .test-summary.empty { display: none; }
+
+      /* ============ Phase 4: ラウンドテーブル（機能優先・最小UI） ============ */
+      .rt-section {
+        border: 1px solid var(--accent);
+        border-radius: 8px;
+        padding: 8px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        background: #fbfdff;
+      }
+      .rt-title-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .rt-title-bar .rt-tag {
+        color: var(--accent);
+      }
+      .rt-session-bar {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .rt-session-bar input[type="text"] {
+        flex: 1;
+        min-width: 120px;
+        padding: 5px 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 12px;
+        font-family: inherit;
+      }
+      .rt-session-bar button {
+        padding: 5px 10px;
+        font-size: 11.5px;
+      }
+      .rt-session-info {
+        font-size: 11px;
+        color: var(--muted);
+        flex-basis: 100%;
+      }
+      .rt-tabs {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .rt-tab-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+      }
+      .rt-tab-row label {
+        color: var(--muted);
+        white-space: nowrap;
+        width: 64px;
+      }
+      .rt-tab-row select {
+        flex: 1;
+        min-width: 0;
+        padding: 4px 6px;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: #fff;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+      }
+      .rt-tab-actions {
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
+      }
+      .rt-tab-actions button {
+        padding: 4px 9px;
+        font-size: 11px;
+      }
+      .rt-thread {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: #fff;
+        padding: 6px 8px;
+        max-height: 300px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .rt-thread-empty {
+        color: var(--muted);
+        font-size: 11.5px;
+        padding: 8px 4px;
+      }
+      .rt-turn {
+        border-left: 3px solid var(--border);
+        padding: 2px 0 2px 8px;
+      }
+      .rt-turn-kazuya { border-left-color: #9ca3af; }
+      .rt-turn-claude { border-left-color: #d97706; }
+      .rt-turn-chatgpt { border-left-color: #059669; }
+      .rt-turn-gemini { border-left-color: #ca8a04; }
+      .rt-turn-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .rt-turn-who { font-size: 11.5px; font-weight: 600; }
+      .rt-turn-sub { font-size: 10.5px; color: var(--muted); }
+      .rt-turn-body {
+        font-size: 12.5px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin-top: 1px;
+      }
+      .rt-input-row {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .rt-input-row textarea {
+        min-height: 52px;
+      }
+      .rt-input-row .button-row {
+        justify-content: flex-end;
+      }
+      .legacy-divider {
+        margin-top: 4px;
+        padding: 5px 8px;
+        color: var(--muted);
+        font-size: 11px;
+        border-top: 1px dashed var(--border);
+      }
     </style>
   </head>
   <body>
     <header>
       <h1>🎙️ Roundtable</h1>
-      <span class="phase">Phase 3a Step1 — ルーティング一般化（claude / chatgpt）</span>
+      <span class="phase">Phase 4 Step1 — 議論履歴 + 3社タブ束縛</span>
     </header>
     <main>
+      <!-- ============ Phase 4: ラウンドテーブル（機能優先・最小UI） ============ -->
+      <section class="rt-section">
+        <div class="rt-title-bar">
+          <span>🎙️ ラウンドテーブル</span>
+          <span class="rt-tag">Phase 4 Step1</span>
+        </div>
+        <div class="rt-session-bar">
+          <input
+            id="rt-session-title"
+            type="text"
+            placeholder="セッション名（例: 事業戦略議論）"
+            spellcheck="false"
+          />
+          <button id="rt-new-session" type="button">🆕 新規セッション</button>
+          <div id="rt-session-info" class="rt-session-info">（セッションなし）</div>
+        </div>
+        <div class="rt-tabs">
+          <div class="rt-tab-row">
+            <label for="rt-tab-gemini">🟨 Gemini:</label>
+            <select id="rt-tab-gemini"></select>
+          </div>
+          <div class="rt-tab-row">
+            <label for="rt-tab-chatgpt">🟩 ChatGPT:</label>
+            <select id="rt-tab-chatgpt"></select>
+          </div>
+          <div class="rt-tab-row">
+            <label for="rt-tab-claude">🟧 Claude:</label>
+            <select id="rt-tab-claude"></select>
+          </div>
+        </div>
+        <div class="rt-tab-actions">
+          <button id="rt-ping-tabs" type="button" title="束縛した 3 タブに content_script が到達するか確認">
+            🔌 3タブ ping
+          </button>
+          <button id="rt-reload-tabs" type="button" title="3 社のタブ一覧を再取得">
+            3タブ再読込
+          </button>
+        </div>
+        <div id="rt-thread" class="rt-thread"></div>
+        <div class="rt-input-row">
+          <textarea
+            id="rt-message"
+            placeholder="議長 Kazuya の発言（Enter=記録 / Shift+Enter=改行）&#10;※ Step1 は履歴記録のみ。3 タブ配信は Step2、応答取得は Step3 で追加"
+            spellcheck="false"
+          ></textarea>
+          <div class="button-row">
+            <button id="rt-record" class="primary" type="button">発言を記録</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="legacy-divider">
+        🔧 デバッグコンソール（Phase 1-3: 単一AI送信 / 連続テスト / DOMロガー）
+      </div>
+
       <div class="tab-row">
         <label for="ai-target">対象 AI:</label>
         <select id="ai-target" title="送信・ping・DOMロガー・連続テストの対象 AI">
@@ -530,6 +722,9 @@
         </div>
       </div>
     </main>
+    <!-- ロード順: データモデル → 既存デバッグコンソール → Phase 4 パネル -->
+    <script src="lib/session_store.js"></script>
     <script src="side_panel.js"></script>
+    <script src="lib/roundtable_panel.js"></script>
   </body>
 </html>
