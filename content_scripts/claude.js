@@ -714,7 +714,31 @@ function extractLatestAssistantMessage() {
       cur = cur.parentElement;
     }
     if (best) {
-      const raw = best.innerText || "";
+      // Phase 4 Step2b で発見: claude.ai が新ラベル（「ポジティブな
+      // フィードバックを送る」「改善フィードバックを送る」「共有」等）の
+      // <button> を応答ターン直下に追加しており、これらが innerText の
+      // 末尾に混入していた。ASSISTANT_TEXT_SUFFIX_PATTERNS の維持ゲームを
+      // 避けるため、構造的に <button> 子孫を除外したクローンの innerText を
+      // 採用する。チャット応答本文は通常 <button> を含まないので副作用は
+      // 実質ゼロ（ツール使用UI等で本文側 button を含む特殊ケースは
+      // 既知の課題#4 として Phase 8 以降で再検討）。
+      //
+      // 重要: detached node の innerText は WHATWG 仕様上「レンダリングツリー
+      // 外＝textContent と同等」になり、ブロック要素境界の \n が入らない。
+      // dedup（段落分割前提の Y 検出、Phase 2 で「主役」と確立）が機能しなく
+      // なる。そのため clone を画面外に一時 attach してから innerText を読み、
+      // 即 remove する（off-screen position で視覚的副作用ゼロ、同期処理で
+      // MutationObserver 副発火も実質無視可能）。
+      const clone = best.cloneNode(true);
+      clone.querySelectorAll("button").forEach((b) => b.remove());
+      clone.style.cssText = "position:absolute;left:-9999px;top:0;";
+      document.body.appendChild(clone);
+      let raw = "";
+      try {
+        raw = clone.innerText || "";
+      } finally {
+        clone.remove();
+      }
       const { text, dedup, diagnostic } = cleanAssistantText(raw);
       if (text && text.length >= MIN_ASSISTANT_CHARS) {
         meta.assistant_turn_depth = bestDepth;
