@@ -478,6 +478,24 @@
         padding: 4px 9px;
         font-size: 11px;
       }
+      .rt-step2a-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 6px 8px;
+        border: 1px dashed var(--border);
+        border-radius: 6px;
+        background: #fffbeb;
+      }
+      .rt-step2a-row button {
+        padding: 5px 10px;
+        font-size: 11.5px;
+      }
+      .rt-step2a-hint {
+        color: var(--muted);
+        font-size: 10.5px;
+      }
       .rt-thread {
         border: 1px solid var(--border);
         border-radius: 6px;
@@ -581,11 +599,21 @@
             3タブ再読込
           </button>
         </div>
+        <div class="rt-step2a-row">
+          <button
+            id="rt-step2a-init"
+            type="button"
+            title="3 社の現在のタブに §5 初回投入プロンプトを逐次配信。投入済みのタブは飛ばす。応答はスレッドに kind=init_ack で記録。"
+          >
+            🧪 §5 初回投入を 3 社へ (Step2a)
+          </button>
+          <span class="rt-step2a-hint">スパイク用。各社が暴走（長文/勝手な議論開始）しないか目視判定。</span>
+        </div>
         <div id="rt-thread" class="rt-thread"></div>
         <div class="rt-input-row">
           <textarea
             id="rt-message"
-            placeholder="議長 Kazuya の発言（Enter=記録 / Shift+Enter=改行）&#10;※ Step1 は履歴記録のみ。3 タブ配信は Step2、応答取得は Step3 で追加"
+            placeholder="議長 Kazuya の発言（Enter=記録 / Shift+Enter=改行）&#10;※ Step2b: 記録と同時に 3 社へ §5 配信（未投入なら初回投入も）。応答取得は Step3"
             spellcheck="false"
           ></textarea>
           <div class="button-row">
@@ -722,8 +750,9 @@
         </div>
       </div>
     </main>
-    <!-- ロード順: データモデル → 既存デバッグコンソール → Phase 4 パネル -->
+    <!-- ロード順: データモデル → §5 文面 → 既存デバッグコンソール → Phase 4 パネル -->
     <script src="lib/session_store.js"></script>
+    <script src="lib/prompts.js"></script>
     <script src="side_panel.js"></script>
     <script src="lib/roundtable_panel.js"></script>
   </body>

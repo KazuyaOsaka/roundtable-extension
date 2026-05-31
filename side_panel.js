@@ -270,12 +270,17 @@ async function refreshTabs(options = {}) {
       $tabSelect.appendChild(opt);
     }
 
-    // 選択優先順位:
-    //   selectCurrentActive=true なら currentTabId を最優先
-    //   それ以外は previousTabId（直前の選択）→ currentTabId（初回ロード時）→ 先頭
+    // Step1.6 (Phase 4 Step2b 後): 同 window に対象タブが無ければ自動選択しない。
+    //   旧挙動は別 window の sort 先頭を fallback 選択していて、content_script
+    //   未注入の古いタブを掴む事故があった（Step3 自動進行で配信が壊れる致命性）。
+    //   sameWindowCount=0 なら未選択にして警告。Kazuya が手動選択 or 該当 window
+    //   で対象タブを開く運用にする。
+    const sameWindowCount = response.sameWindowCount || 0;
     let chosen = null;
     let reason = "";
-    if (selectCurrentActive && response.currentTabId != null) {
+    if (sameWindowCount === 0) {
+      reason = "no-same-window"; // 自動選択しない
+    } else if (selectCurrentActive && response.currentTabId != null) {
       chosen = response.currentTabId;
       reason = "current-active";
     } else if (previousTabId != null) {
@@ -284,32 +289,54 @@ async function refreshTabs(options = {}) {
     } else if (response.currentTabId != null) {
       chosen = response.currentTabId;
       reason = "initial-current-active";
+    } else {
+      // 同 window 候補あり → sort 先頭（同 window 最優先 → lastAccessed 最新）
+      chosen = parseInt($tabSelect.options[0].value, 10);
+      reason = "same-window-best";
     }
 
-    const selected = trySelectTabId(chosen);
-    if (!selected) {
+    const selected = chosen != null && trySelectTabId(chosen);
+    if (!selected && sameWindowCount > 0) {
+      // 想定外: 同 window 候補ありなのに選択失敗（previous が消えた等）→ 先頭
       $tabSelect.options[0].selected = true;
       reason = "fallback-first";
     }
 
-    setActionButtonsEnabled(true);
+    if (sameWindowCount === 0) {
+      setActionButtonsEnabled(false);
+      // 「(同window タブ無し)」プレースホルダを先頭に挿入して選択させない
+      const placeholder = document.createElement("option");
+      placeholder.value = NO_TAB_VALUE;
+      placeholder.textContent = `(同 window に ${tm.site} タブ無し — 該当 window で開くか手動選択してください)`;
+      placeholder.disabled = false;
+      placeholder.selected = true;
+      $tabSelect.insertBefore(placeholder, $tabSelect.firstChild);
+    } else {
+      setActionButtonsEnabled(true);
+    }
 
     const reasonNote = {
       "current-active": "（現在のタブを選択）",
       "preserve-previous": "（前の選択を維持）",
       "initial-current-active": "（起動時: 現在のタブを自動選択）",
+      "same-window-best": "（同 window の最近タブを自動選択）",
       "fallback-first": "（先頭にフォールバック）",
+      "no-same-window": "（同 window に対象タブ無し → 自動選択せず）",
     }[reason] || "";
 
     logInfo(
-      `[${tm.label}] ${tm.site} タブ ${tabs.length} 件を読み込みました${reasonNote}。`,
+      `[${tm.label}] ${tm.site} タブ ${tabs.length} 件読み込み（同 window=${sameWindowCount} 件）${reasonNote}。`,
     );
-    if (selectCurrentActive && response.currentTabId == null) {
+    if (sameWindowCount === 0 && tabs.length > 0) {
+      logWarn(
+        `${tm.label} タブが現在の Chrome ウィンドウにありません（別 window に ${tabs.length} 件あり）。誤選択を防ぐため自動選択をスキップしました。該当 window で ${tm.site} を開いて「再読込」するか、ドロップダウンから手動選択してください。`,
+      );
+    } else if (selectCurrentActive && response.currentTabId == null) {
       const urlNote = response.currentTabUrl
         ? ` (url=${response.currentTabUrl})`
         : "";
       logWarn(
-        `現在のアクティブタブは ${tm.site} ではありません${urlNote}。手動でドロップダウンから選んでください。`,
+        `現在のアクティブタブは ${tm.site} ではありません${urlNote}。同 window の他の ${tm.site} タブを選択しました。`,
       );
     }
   } catch (e) {
@@ -427,6 +454,14 @@ $clear.addEventListener("click", () => {
 $reloadTabs.addEventListener("click", () => {
   logInfo("タブ一覧を再読込します...");
   refreshTabs();
+});
+
+// Step1.6: ドロップダウンを手動で変えたら、valid なタブが選ばれていれば
+// 送信/ping ボタンを enable、プレースホルダ（NO_TAB_VALUE）なら disable に更新。
+// 同 window 候補ゼロで自動選択がスキップされた後、Kazuya が手動で別 window
+// タブを選んだケースを救うため。
+$tabSelect.addEventListener("change", () => {
+  setActionButtonsEnabled(getSelectedTabId() != null);
 });
 
 $useCurrentTab.addEventListener("click", async () => {

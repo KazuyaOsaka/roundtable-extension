@@ -136,10 +136,18 @@ async function listAiTabs(targetKey) {
       return b.id - a.id;
     });
 
+  // Step1.6 (Phase 4 Step2b 後発見): 同 window 候補数を返し、panel 側で
+  // 「同 window に対象タブが無ければ自動選択しない」policy を取れるようにする。
+  // 旧挙動（同 window 候補ゼロ時に別 window の sort 先頭を fallback 選択）が、
+  // content_script 未注入の古い別 window タブを掴んで Step3 自動進行で配信を
+  // 壊しうる致命性があったため、構造的にゼロ事故化する。
+  const sameWindowCount = tabs.filter((t) => t.isCurrentWindow).length;
+
   return {
     target: targetKey || DEFAULT_TARGET,
     targetLabel: conf.label,
     tabs,
+    sameWindowCount,
     currentTabId: currentTabIsTarget ? currentTabId : null,
     currentTabIsTarget,
     currentTabUrl: currentTab ? currentTab.url || null : null,
