@@ -546,6 +546,25 @@
       .rt-input-row .button-row {
         justify-content: flex-end;
       }
+      .rt-turn-controls {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        padding: 6px 8px;
+        border: 1px dashed var(--border);
+        border-radius: 6px;
+        background: #eff6ff;
+      }
+      .rt-turn-controls-label {
+        color: var(--muted);
+        font-size: 10.5px;
+        white-space: nowrap;
+      }
+      .rt-turn-controls button {
+        padding: 5px 10px;
+        font-size: 11.5px;
+      }
       .legacy-divider {
         margin-top: 4px;
         padding: 5px 8px;
@@ -558,14 +577,14 @@
   <body>
     <header>
       <h1>🎙️ Roundtable</h1>
-      <span class="phase">Phase 4 Step1 — 議論履歴 + 3社タブ束縛</span>
+      <span class="phase">Phase 4 Step3a — 議論履歴 + 指名ターン制御</span>
     </header>
     <main>
       <!-- ============ Phase 4: ラウンドテーブル（機能優先・最小UI） ============ -->
       <section class="rt-section">
         <div class="rt-title-bar">
           <span>🎙️ ラウンドテーブル</span>
-          <span class="rt-tag">Phase 4 Step1</span>
+          <span class="rt-tag">Phase 4 Step3a</span>
         </div>
         <div class="rt-session-bar">
           <input
@@ -619,6 +638,30 @@
           <div class="button-row">
             <button id="rt-record" class="primary" type="button">発言を記録</button>
           </div>
+        </div>
+        <div class="rt-turn-controls">
+          <span class="rt-turn-controls-label">指名（1社に応答指示）:</span>
+          <button
+            id="rt-nominate-gemini"
+            type="button"
+            title="Gemini のタブにだけ応答指示（全履歴付き）を送る。他2社のタブには一切触れない。"
+          >
+            🟨 Gemini を指名
+          </button>
+          <button
+            id="rt-nominate-chatgpt"
+            type="button"
+            title="ChatGPT のタブにだけ応答指示（全履歴付き）を送る。他2社のタブには一切触れない。"
+          >
+            🟩 ChatGPT を指名
+          </button>
+          <button
+            id="rt-nominate-claude"
+            type="button"
+            title="Claude のタブにだけ応答指示（全履歴付き）を送る。他2社のタブには一切触れない。"
+          >
+            🟧 Claude を指名
+          </button>
         </div>
       </section>
 
