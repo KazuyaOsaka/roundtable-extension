@@ -1,7 +1,7 @@
 # Roundtable プロジェクト 進捗サマリー
 
-**最終更新**: 2026-05-27
-**現在のフェーズ**: Phase 4（議論履歴共有とターン制御）着手 🚧 — Phase 3 完全完了・main マージ済み（47ac601）。Phase 4 キックオフ（設計確定 + ブランチ派生）
+**最終更新**: 2026-06-08
+**現在のフェーズ**: Phase 4（議論履歴共有とターン制御）🚧 — Step1〜Step2b + **Step3a（指名ターン制御）完了**（commit `716aef3`、feature/phase4-turn-control、origin push 済み）。残り Step3b（自動1周/2周・停止・スキップ）/ Step3c（表示順 + 総合検証）
 
 ---
 
@@ -1095,6 +1095,75 @@ Step2 までで「履歴 + 配信 + 待機」基盤が揃った。Step3 で「�
 停止 / 失敗時自動スキップ」+ 応答指示プロンプト発火を実装すればロードマップ Phase 4
 完了条件を全て満たす。実装着手は Opus 4.8 切替後（Kazuya 予定）。
 
+### Phase 4 Step3a 完了（指名ターン制御）— ✅ Kazuya 実機検証 合格（2026-06-08）
+
+**commit `716aef3`** / **作業ブランチ feature/phase4-turn-control**（origin push 済み）
+/ 実装は **Opus 4.8** で実施（設計は Opus 4.7 が提示、status/memory に記録済み）。
+
+Step2b までは全社「了解」待機しか返さなかった。Step3a で**初めて指名された1社が議論を始める**。
+
+**実装（panel UX 層のみ・content_script は無変更）**:
+- `buildHistoryMarkdown`: 応答指示に渡す議論履歴を Markdown 化。**Kazuya 発言 +
+  `metadata.kind="response"` の AI 本応答だけ**を含め、`init_ack` / `standby_ack`
+  （各社の「了解」相当）は除外。形式は既存 `standbyPrompt` と統一した `[話者]:` ブロック
+  （§9 絵文字見出しは人間向けエクスポート用なので使わない）。
+- `sendResponseToTab`: 指名社のタブへ `RTPrompts.responsePrompt(履歴)` を送信し、応答を
+  `metadata.kind="response"` で Turn 記録。履歴は送信直前の最新セッションから組む
+  （Step3b の自動進行で直前の社の発言を反映できるように）。
+- 指名ボタン3つ（🟨Gemini / 🟩ChatGPT / 🟧Claude）。**指名社の tabId にだけ `send_to_ai`
+  を投げ、他2社のタブには注入も送信もしない**＝web チャットは送信されない限り喋らないので
+  **物理的に沈黙が保証される**（プロンプト依存ではない）。
+- `ensureInit` に §5 on-demand 初回投入を共有化（broadcast と指名で再利用、DRY）。
+  未投入社を指名した場合は §5 を先に投入。
+- `setTurnControlsDisabled` で 発言記録 / §5初回投入 / 指名 を多重実行ガード
+  （最小ステートマシン IDLE↔処理中。AUTO/STOPPING は Step3b）。
+- 課題#7 対処: 指名タブを一時アクティブ化→完了後に元タブ復帰（同 window 内のみ）。
+
+**無変更保証（git diff 証明済み）**:
+- 変更は **`lib/roundtable_panel.js` + `side_panel.html` の2ファイルのみ**。
+- `content_scripts/*` は **main(`2eca14b`) とバイト一致**（diff stat 空）。
+- `background.js` / `lib/prompts.js` / `lib/session_store.js` / `side_panel.js` は
+  Step3a で **不触**（HEAD `c4c1c05` 比 空）。
+
+**検証結果（Kazuya 実機、全 ✅）**: 各社を指名し、いずれも**指名1社のみ応答・他2社のタブ無変化**・
+抽出欠損なし・スレッド4件正常表示。
+
+| 指名社 | 応答 | 所要 |
+|---|---|---|
+| 🟨 Gemini | 507字 | 34.9秒 |
+| 🟩 ChatGPT | 754字 | 74.6秒 |
+| 🟧 Claude | 822字 | 123.2秒 |
+
+**意義**: Step2b は「全社が黙って暴走しない（**必要条件**）」を実証した。Step3a は
+「指名された1社が『了解』待機から抜け出して実際に議論を始める（**十分条件**）」を**初めて実証**。
+両者が揃い、**ラウンドテーブルのターン制御の基盤が成立**した。「他2社不発」はアーキ上の物理保証
+（触らないタブは出力できない）であり、Step3a で検証すべき本リスクは逆側＝「指名社が議論を始めるか」
+だったが、3社とも数百字の実質的応答で合格。
+
+**metadata.model は後段送り**: content_script が `send_to_ai` の応答にモデル名を返していない
+（claude/chatgpt/gemini いずれも `responseText` 等のみで `model` フィールド無し）ため、
+`response` Turn の metadata は `{kind, durationMs, selector}` のみ。`metadata.model` は §7 上
+optional なので未設定でも整合。取りに行くには content_script 変更（§12.1 の model-selector 等
+読み取り）が必要なので、**無変更保証を優先して後段（Phase 6 UI 整備 or 専用 fix）送り**。
+
+### 既知の課題#9: 注入前の沈黙（注入手段フォールバックの無駄、Step3a で再観察）
+
+- **現象**: 送信パイプラインで「入力欄ヒット → 注入成功」までに **Gemini 約45秒 / Claude 約97秒**
+  かかる回があった。**AI の思考時間ではない**（注入＝入力欄に文字を貼る段階の遅延）。
+- **主因**: `beforeinput-per-char` が **3社とも毎回失敗**してから後続手段
+  （clipboard-paste / execCommand-insertText）に到達する無駄。Phase 1 で判明済みの
+  「`beforeinput-per-char` は常に失敗、フォールバックで成功」が、長文の §5/応答指示で
+  顕在化して時間コストになっている。
+- **関連**: 課題#2（注入順序最適化＝clipboard-paste 優先化）/ 課題#7（裏タブスロットルによる
+  100秒級遅延）。課題#7 の「タブをアクティブに保つ」運用前提と合わせて評価する。
+- **対応**: Step3 完了後の**独立 Step**で対応予定。注入順序の最適化は content_script 変更を
+  伴うため、**Step3 の無変更保証の外**（Step3a/3b/3c では触らない）。
+
+### Phase 4 残り = Step3b / Step3c
+
+Step3a（指名）合格により、残りは Step3b（自動1周 / 自動2周 / 停止 / 失敗時自動スキップ）と
+Step3c（スレッド表示順序 + 全6条件の総合検証）。Step3b の指示待ち。
+
 ---
 
 ## コーディング規約（運用ルール）
@@ -1124,13 +1193,16 @@ DevTools の Console フィルタや本番運用時のトリアージで「ど�
 
 ## 直近の次のアクション
 
-1. **Phase 4 Step3 実装**（ターン制御: 指名 / 自動1周 / 自動2周 / 停止 / 失敗時自動スキップ +
-   応答指示プロンプト発火）
-   - Step3 設計は Opus 4.7 で提示済み（次セッションの起点）。実装は **Opus 4.8 (xhigh)** で実施。
-   - content_scripts 無変更を維持。background.js も既存ルーティングで足りる想定。
-   - 検証ゲート: ロードマップ Phase 4 完了条件（指名/自動進行/停止/履歴順）全項目
-2. Step3 完了 → **Phase 4 全体まとめて main マージ**（中間マージはせず Phase 4 完了時に一気に降ろす運用、過去 Phase 3a/3b と同じ規律）
-3. Phase 4 完了後は Phase 5（システムプロンプト整備、ただし忖度禁止プロトコルは既に Phase 4 で実証済みなので主に微調整）
+1. **Phase 4 Step3b 実装**（自動1周 / 自動2周 / 停止 / 失敗時自動スキップ）
+   - Step3a（指名）は ✅ 合格済み（commit `716aef3`）。Step3b はその指名ロジックを
+     defaultOrder（Gemini→ChatGPT→Claude）で逐次ループ化 + 停止フラグ + スキップ。
+   - ステートマシン: IDLE→AUTO→IDLE / AUTO+停止→STOPPING→現ステップ完了後 IDLE。
+   - content_scripts 無変更を維持（バイト一致を git diff で証明）。background.js も既存
+     ルーティングで足りる想定。**Kazuya の Step3b 指示待ち。**
+2. **Step3c**（スレッド表示順序の確認 + ロードマップ Phase 4 完了条件 全6項目の総合検証）
+3. Step3 完了 → **Phase 4 全体まとめて main マージ**（中間マージはせず Phase 4 完了時に一気に降ろす運用、過去 Phase 3a/3b と同じ規律）
+4. **注入順序最適化（課題#2/#9）を独立 Step で**（content_script 変更を伴うため Step3 の無変更保証の外。Step3 完了後）
+5. Phase 4 完了後は Phase 5（システムプロンプト整備、ただし忖度禁止プロトコルは既に Phase 4 で実証済みなので主に微調整）
 
 ---
 
