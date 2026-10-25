@@ -14,6 +14,7 @@ import { EventEmitter } from "node:events";
 import crypto from "node:crypto";
 import { reduce } from "./reducer.js";
 import { renderTurn, turnStructured, visibleMessages, fenceMessage } from "./render.js";
+import { probeReport, chainReport } from "./report.js";
 import {
   AI_IDS,
   CHAIR_ID,
@@ -273,10 +274,15 @@ export class Roundtable extends EventEmitter {
   }
 
   // Probe: a single AI answers request A, then after `delaySec` gets request B.
-  startProbe({ participant, delaySec = 0 }) {
+  // `wake` (optional) sets how this AI is woken for request B, so that
+  // "waits inside its running task" and "is restarted after its task ended"
+  // are tested and recorded separately.
+  startProbe({ participant, delaySec = 0, wake }) {
     const m = this.requireOpen();
     if (!AI_IDS.includes(participant)) throw new CommandError("bad_input", "不明な参加者");
     if (!m.members[participant].write) throw new CommandError("forbidden", "書込権限がありません");
+    if (!(delaySec >= 0 && delaySec <= 1800)) throw new CommandError("bad_input", "待機は0〜1800秒");
+    if (wake && typeof wake === "object") this.updateSettings({ wake: { [participant]: wake } });
     const prev = this._run(m);
     if (prev && ["running", "paused"].includes(prev.state)) this._stopRun(m, prev, "接続試験を開始したため");
     const codeA = `ALPHA-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
@@ -288,7 +294,7 @@ export class Roundtable extends EventEmitter {
       presetId: null,
       order: [participant],
       limits: {},
-      probe: { participant, delaySec, codeA, codeB },
+      probe: { participant, delaySec, codeA, codeB, wake: structuredClone(m.settings.wake[participant]) },
       steps: [
         { phase: "接続試験A", participants: [participant], instruction: `接続試験Aです。${a}+${b} の答えを1文で書き、合言葉 ${codeA} を本文に含めてください。` },
         { phase: "接続試験B", participants: [participant], delaySec, instruction: `接続試験Bです。${a}×${b} の答えを1文で書き、合言葉 ${codeB} を本文に含めてください。` },
@@ -1034,55 +1040,11 @@ export class Roundtable extends EventEmitter {
   }
 
   probeReport() {
-    const m = this.requireActive();
-    const runs = m.runOrder.map((id) => m.runs[id]).filter((r) => r.kind === "probe");
-    return runs.map((run) => {
-      const reqs = m.requestOrder.map((id) => m.requests[id]).filter((r) => r.runId === run.id);
-      const row = (req, code) => {
-        if (!req) return null;
-        const msg = req.messageId ? m.messages.find((x) => x.id === req.messageId) : null;
-        return {
-          requestId: req.id,
-          createdAt: req.createdAt,
-          firstDeliveredAt: req.firstDeliveredAt,
-          deliveredVia: req.deliveredVia,
-          deliveries: req.deliveries,
-          triggers: req.triggers,
-          status: req.status,
-          closeReason: req.closeReason,
-          answeredAt: msg?.at ?? null,
-          codeFound: msg ? msg.text.includes(code) : false,
-          text: msg?.text ?? null,
-        };
-      };
-      const a = reqs.find((r) => r.phase === "接続試験A");
-      const b = reqs.find((r) => r.phase === "接続試験B");
-      const ra = row(a, run.probe.codeA);
-      const rb = row(b, run.probe.codeB);
-      let wakeRoute = null;
-      if (rb?.firstDeliveredAt) {
-        const before = rb.triggers.filter((t) => t.at <= rb.firstDeliveredAt);
-        const last = before[before.length - 1];
-        if (rb.deliveredVia === "wait") wakeRoute = "稼働中タスク内の待機（wait_for_my_turn）";
-        else if (rb.deliveredVia === "web") wakeRoute = "参加者ページ（ブラウザ経由）";
-        else if (last?.manual) wakeRoute = "人の操作（パネルの手動通知ボタン）";
-        else if (last?.channel === "mcp_events") wakeRoute = "処理終了後のイベント再起動（MCP Events → get_my_turn）";
-        else if (last?.channel === "panel") wakeRoute = "処理終了後のイベント再起動（MCP App パネル → get_my_turn）";
-        else wakeRoute = "通知記録なしで get_my_turn（人の入力の可能性・経路不明）";
-      }
-      return {
-        runId: run.id,
-        participant: run.probe.participant,
-        delaySec: run.probe.delaySec,
-        state: run.state,
-        reason: run.reason,
-        A: ra,
-        B: rb,
-        waitedSec: ra?.answeredAt && rb?.firstDeliveredAt ? Math.round((rb.firstDeliveredAt - ra.answeredAt) / 1000) : null,
-        wakeRoute,
-        passed: !!(ra?.codeFound && rb?.codeFound && rb.status === "answered"),
-      };
-    });
+    return probeReport(this.requireActive());
+  }
+
+  chainReport(runId) {
+    return chainReport(this.requireActive(), runId);
   }
 
   exportJson() {

@@ -374,3 +374,20 @@ test("independent round + interrupt: chair message shown, peers hidden, later de
   assert.doesNotMatch(c2.text, /CHAIR-NOTE/, "already shown once, not repeated");
   assert.equal(m.requests[c2.request.id].phase, "相互批判");
 });
+
+test("reports: a turn picked up without any wake record is not counted as automatic", async () => {
+  const { quoteCheck } = await import("../src/core/report.js");
+  const { rt } = makeRt();
+  newMeeting(rt);
+  rt.startAuto({ maxTurns: 3 });
+  answer(rt, "gemini", "夜間照明を減らすと星が見える範囲が広がる");
+  // ChatGPT picks up through get_my_turn with no wake record (as if a person typed "your turn")
+  answer(rt, "chatgpt", "「星が見える範囲が広がる」は都市部では限定的です");
+  const d = await rt.waitForTurn("claude", 100);
+  rt.post("claude", { requestId: d.request.id, text: "「都市部では限定的」という指摘に同意しつつ補足します" });
+  const c = rt.chainReport();
+  assert.deepEqual(c.rows.map((r) => r.wakeCode), ["unknown", "unknown", "wait"]);
+  assert.equal(c.automaticAnswered, 1);
+  assert.equal(c.quotedPrevious, 2);
+  assert.equal(quoteCheck("「存在しない引用文です」", "別の文章").matched, 0);
+});

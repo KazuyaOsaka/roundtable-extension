@@ -91,9 +91,26 @@
       <p class="muted">依頼A → 回答A → 待機 → 依頼B → 回答B を自動で行い、依頼Bの受け取り方（タスク内で待機していたか、終了後に再起動されたか）を記録します。会議が必要です（会議タブで作成）。試験中は試験対象以外への依頼は出ません。</p>
       <div class="row wrap">
         <label>対象<select id="probeWho"><option value="claude">Claude</option><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option></select></label>
+        <label>依頼Bの受け取り方<select id="probeMode">
+          <option value="wait">タスク内で待機（wait_for_my_turn）</option>
+          <option value="panel">終了後に再起動：パネル（MCP App）</option>
+          <option value="events">終了後に再起動：MCP Events</option>
+          <option value="web">参加者ページ（ブラウザ）</option>
+        </select></label>
         <label>依頼Bまでの待機<select id="probeDelay"><option value="0">すぐ</option><option value="30">30秒</option><option value="180" selected>3分</option><option value="300">5分</option></select></label>
+      </div>
+      <details open><summary class="small">手順と、この方式用の開始時の指示</summary>
+        <ol class="steps small">
+          <li>下の指示をコピーし、対象のAIの新しいチャット（ChatGPT は Work チャット）に貼って送信する。パネル方式なら、パネルが表示されたことを確認する。</li>
+          <li>AIが待機に入った（または応答を終えた）ことを確認してから「試験開始」を押す。以後はAIの画面に手を触れない（確認ダイアログが出たら、承認した回数を下の記録欄に書く）。</li>
+          <li>結果表の「判定」と「Bの受け取り方」を確認する。</li>
+        </ol>
+        <div class="copybox"><pre id="probePrompt"></pre><button id="copyProbePrompt">コピー</button></div>
+      </details>
+      <div class="row wrap">
         <button id="startProbe" class="primary">試験開始</button>
         <button id="stopProbe">停止</button>
+        <a class="button" href="/api/probe-report?download=1">結果をJSONで保存</a>
       </div>
       <div class="probe-now">
         <div><span class="muted small">議題</span> <span id="probeTopic">—</span></div>
@@ -103,6 +120,17 @@
     <div class="card">
       <h3>結果</h3>
       <div id="probeResults" class="small"></div>
+    </div>
+    <div class="card">
+      <h2>連結試験（三社）</h2>
+      <p class="muted small">先に3社すべてへ開始時の指示を送り、待機状態（または購読済み）にしてから開始してください。開始後はAIの画面に手を触れず、確認ダイアログが出た場合は記録してください。各発言の受け取り方と、直前のAIの発言を「」で引用しているかを自動で判定します（内容が踏まえられているかは、最後に人が読んで判断してください）。</p>
+      <div class="row wrap">
+        <button id="chain6" class="primary">2巡・6発言で開始</button>
+        <button id="chain9">3巡・9発言で開始</button>
+        <span class="muted small">途中停止の試験: 進行中にAIが処理中のときに「停止」を押す（会議タブまたは下のボタン）</span>
+        <button id="chainStop">停止</button>
+      </div>
+      <div id="chainResults" class="small"></div>
     </div>
     <div class="card">
       <h3>画面で確認した内容の記録</h3>

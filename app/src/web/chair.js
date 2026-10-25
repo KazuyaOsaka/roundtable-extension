@@ -9,7 +9,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { CommandError } from "../core/engine.js";
 import { exportMarkdown } from "../core/render.js";
-import { setupInfo } from "../core/setup.js";
+import { setupInfo, startupPrompt } from "../core/setup.js";
 import { ROLE_PRESETS, PHASE_PRESETS, AI_IDS } from "../core/presets.js";
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../public");
@@ -149,7 +149,20 @@ export function chairRoutes({ rt, hub, store, config, saveConfig, port, rotateTo
         res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-disposition": `attachment; filename="${m.id}.json"` });
         return res.end(JSON.stringify(rt.exportJson(), null, 2));
       }
-      if (req.method === "GET" && url.pathname === "/api/probe-report") return json(res, 200, { reports: rt.probeReport() });
+      if (req.method === "GET" && url.pathname === "/api/probe-report") {
+        if (!rt.active) return json(res, 200, { reports: [] });
+        if (url.searchParams.get("download")) res.setHeader("content-disposition", `attachment; filename="probe-${rt.active.id}.json"`);
+        return json(res, 200, { reports: rt.probeReport(), chain: rt.chainReport() });
+      }
+      if (req.method === "GET" && url.pathname === "/api/prompt") {
+        const id = url.searchParams.get("participant");
+        if (!AI_IDS.includes(id)) return json(res, 400, { error: "bad_input" });
+        const route = url.searchParams.get("route") === "web" ? "web" : "mcp";
+        const wake = { wait: url.searchParams.get("wait") === "1", panel: url.searchParams.get("panel") === "1", events: url.searchParams.get("events") === "1" };
+        const info = setupInfo({ publicUrl: config.publicUrl, tokens: config.tokens, meeting: rt.active }).find((x) => x.id === id);
+        return json(res, 200, { text: startupPrompt(id, wake, { route, pageUrl: info.pageUrl || "（公開URLを設定すると表示されます）" }) });
+      }
+      if (req.method === "GET" && url.pathname === "/api/chain-report") return json(res, 200, { chain: rt.active ? rt.chainReport(url.searchParams.get("run") || undefined) : null });
       if (req.method === "GET" && url.pathname === "/api/log") {
         const m = rt.active;
         if (!m) return json(res, 200, { events: [] });

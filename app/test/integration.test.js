@@ -76,6 +76,11 @@ test("three routes together: 6 then 9 utterances with no human action between tu
     }
     assert.equal(ev.badSignatures, 0);
     assert.equal(ev.received.length, 2, "ChatGPT woken twice by MCP Events");
+    const chain = app.rt.chainReport();
+    assert.equal(chain.answered, 6);
+    assert.equal(chain.automaticAnswered, 6, "every turn reached the AI without a person");
+    assert.deepEqual(chain.rows.map((r) => r.wakeCode), ["web", "events", "wait", "web", "events", "wait"]);
+    assert.equal(chain.quotedPrevious, 5, "every answer after the first quotes the previous AI");
     await Promise.all(ev.runs);
 
     await chair("auto", { presetId: "free", maxTurns: 9, maxMinutes: 5 });
@@ -111,8 +116,9 @@ test("probe via each wake route is classified correctly", async () => {
     const panel = panelParticipant(claude, "Claude");
     const ge = webParticipant(env.pageUrl("gemini"), "Gemini");
 
+    const modes = { claude: { wait: false, panel: true, events: false }, chatgpt: { wait: false, panel: false, events: true }, gemini: { wait: true, panel: false, events: false } };
     for (const p of ["claude", "chatgpt", "gemini"]) {
-      await chair("probe", { participant: p, delaySec: 1 });
+      await chair("probe", { participant: p, delaySec: 1, wake: modes[p] });
       await until(() => app.rt.active.runs[app.rt.active.runId].state === "completed");
     }
     const reps = app.rt.probeReport();
@@ -122,6 +128,8 @@ test("probe via each wake route is classified correctly", async () => {
     assert.match(by.chatgpt.wakeRoute, /MCP Events/);
     assert.match(by.gemini.wakeRoute, /参加者ページ/);
     for (const r of reps) assert.ok(r.waitedSec >= 1, "B came after the configured wait");
+    for (const r of reps) assert.ok(r.passedAutomatically);
+    assert.deepEqual(by.claude.wakeSetting, modes.claude);
     panel.stopped = ge.stopped = true;
     await chair("end");
     await Promise.all([panel.done, ge.done]);

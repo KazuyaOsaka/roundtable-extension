@@ -247,8 +247,30 @@ $("saveObs").addEventListener("click", async () => {
   drafts = {};
   toast("保存しました");
 });
-$("startProbe").addEventListener("click", () => act("probe", { participant: $("probeWho").value, delaySec: Number($("probeDelay").value) }));
+const PROBE_WAKE = {
+  wait: { wait: true, panel: false, events: false },
+  panel: { wait: false, panel: true, events: false },
+  events: { wait: false, panel: false, events: true },
+  web: { wait: false, panel: false, events: false },
+};
+async function updateProbePrompt() {
+  const mode = $("probeMode").value;
+  const w = PROBE_WAKE[mode];
+  const q = new URLSearchParams({ participant: $("probeWho").value, route: mode === "web" ? "web" : "mcp", wait: w.wait ? "1" : "0", panel: w.panel ? "1" : "0", events: w.events ? "1" : "0" });
+  try {
+    $("probePrompt").textContent = (await (await fetch(`/api/prompt?${q}`)).json()).text;
+  } catch {}
+}
+["probeWho", "probeMode"].forEach((id) => $(id).addEventListener("change", updateProbePrompt));
+$("copyProbePrompt").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText($("probePrompt").textContent); toast("コピーしました"); } catch { toast("コピーできませんでした"); }
+});
+$("startProbe").addEventListener("click", () => act("probe", { participant: $("probeWho").value, delaySec: Number($("probeDelay").value), wake: PROBE_WAKE[$("probeMode").value] }));
 $("stopProbe").addEventListener("click", () => act("stop"));
+$("chain6").addEventListener("click", () => act("auto", { presetId: "free", maxTurns: 6, maxMinutes: 60 }));
+$("chain9").addEventListener("click", () => act("auto", { presetId: "free", maxTurns: 9, maxMinutes: 90 }));
+$("chainStop").addEventListener("click", () => act("stop"));
+setTimeout(updateProbePrompt, 500);
 
 let probeTimer = null;
 function refreshProbeResults() {
@@ -256,7 +278,8 @@ function refreshProbeResults() {
   probeTimer = setTimeout(async () => {
     probeTimer = null;
     try {
-      const { reports } = await (await fetch("/api/probe-report")).json();
+      const { reports, chain } = await (await fetch("/api/probe-report")).json();
+      renderChain(chain);
       const rows = reports.map((r) => {
         const cell = (x) => (x ? `${x.status}${x.deliveredVia ? `／受信: ${x.deliveredVia}` : ""}${x.codeFound ? "／合言葉 ✓" : x.status === "answered" ? "／合言葉 ✗" : ""}` : "—");
         return el(
@@ -279,6 +302,27 @@ function refreshProbeResults() {
     } catch {}
     if ($("autoLog").checked && document.querySelector('.tabs button[data-tab="probe"]').classList.contains("active")) loadLog();
   }, 300);
+}
+
+function renderChain(c) {
+  if (!c) return $("chainResults").replaceChildren(el("div", { class: "muted" }, "まだ実施していません"));
+  const head = el(
+    "div",
+    {},
+    `${RUN_LABEL[c.state] || c.state}${c.reason ? `（${c.reason}）` : ""}／回答 ${c.answered}${c.limits?.maxTurns ? `/${c.limits.maxTurns}` : ""}／人の操作なしで届いた回答 ${c.automaticAnswered}／直前のAIを引用 ${c.quotedPrevious}`,
+  );
+  const rows = c.rows.map((r) =>
+    el(
+      "tr",
+      {},
+      el("td", {}, r.seq ? `#${r.seq}` : "—"),
+      el("td", {}, r.name),
+      el("td", {}, r.status + (r.closeReason ? `（${r.closeReason}）` : "") + (r.lateMessages ? `／遅れて届いた回答 ${r.lateMessages}件` : "")),
+      el("td", { class: r.wakeCode ? (r.automatic ? "pass" : "fail") : "" }, r.wakeRoute || "—"),
+      el("td", {}, r.quote ? (r.quote.matched ? `✓ #${r.prevSeq} ${NAMES[r.prevSpeaker]}「${r.quote.sample.slice(0, 20)}…」` : `✗（引用${r.quote.quotes}件・一致なし）`) : "—"),
+    ),
+  );
+  $("chainResults").replaceChildren(head, el("table", {}, el("tr", {}, ...["発言", "話者", "依頼の状態", "受け取り方", "直前のAIの引用"].map((h) => el("th", {}, h))), ...rows));
 }
 
 async function loadLog() {
