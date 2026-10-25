@@ -103,7 +103,7 @@ Chromium 上に、公式の MCP Apps ホスト側SDK（`@modelcontextprotocol/ex
 
 ## A-3. 画面の操作確認（Playwright・模擬参加者）
 
-`npm run demo:mock` で模擬参加者つきのサーバーを起動し、ブラウザ（Chromium）で議長画面を操作しました。
+`npm run check:ui`（模擬参加者つきのサーバーを起動し、Chromium で議長画面を操作するスクリプト）で確認しました。結果は `UI CHECK: OK` です。
 - 「全員に聞く」→ 3社分の回答が時系列に並ぶ
 - 「AIだけで続ける」6回 → 途中で「発言のみ／割込」→「一時停止」表示 →「再開」→「回数上限 6 回に到達」で完了
 - 接続試験（ChatGPT・MCP Events・待機0秒）→ 結果表に「成立」と「MCP Events → get_my_turn」が表示される

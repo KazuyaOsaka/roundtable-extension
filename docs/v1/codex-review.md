@@ -8,10 +8,11 @@ cd app
 npm ci
 npm test                 # 45件。期待値: "# pass 45" "# fail 0"（HTTPS 試験に openssl を使用）
 npm run check:panel      # パネルを公式ホストSDK（AppBridge）で動かす。Playwright＋Chromium が必要
+npm run check:ui         # 議長画面を模擬参加者で操作する。Playwright＋Chromium が必要
 npm run demo:mock        # 模擬参加者つきで起動 → http://127.0.0.1:8787/
 ```
 
-- Node.js 22 以上が必要です（`engines` は >=20.11 と書いていますが、検証は v22.22.0 でのみ行いました）。
+- Node.js 22 以上が必要です（検証は v22.22.0 で行いました）。
 - `demo:mock` は実サービスに接続しません。模擬 Claude（2025年版MCP・タスク内待機）、模擬 ChatGPT（2026-07-28版MCP・MCP Events）、模擬 Gemini（参加者ページ）が自動で応答します。
 - 実データは `app/data/`（gitignore 済み）に入ります。`config.json` は参加者トークンと議長トークン、`subscriptions.json` は Webhook の署名鍵、`meetings/*.jsonl` は議事録のイベント記録です。いずれもコミットしないでください。
 
@@ -32,6 +33,7 @@ npm run demo:mock        # 模擬参加者つきで起動 → http://127.0.0.1:8
 | `app/public/` | 議長画面 |
 | `app/test/` | 単体・結合試験。`mocks.js` は模擬参加者。`review-fixes.test.js` は独立レビューの指摘の回帰試験 |
 | `app/scripts/check-panel-host.mjs` | パネルを公式ホストSDKで動かす検証 |
+| `app/scripts/check-ui.mjs`・`mock-lib.mjs`・`demo-mock.mjs` | 模擬参加者での画面確認・デモ |
 
 ## 重点的に見てほしい点
 

@@ -5,13 +5,14 @@
   "type": "module",
   "description": "Roundtable: human + Claude + ChatGPT + Gemini meeting room (MCP / web participants)",
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node src/main.js",
     "test": "node --test test/*.test.js",
     "demo:mock": "node scripts/demo-mock.mjs",
-    "check:panel": "node scripts/check-panel-host.mjs"
+    "check:panel": "node scripts/check-panel-host.mjs",
+    "check:ui": "node scripts/check-ui.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/core": "^2.4.0",
