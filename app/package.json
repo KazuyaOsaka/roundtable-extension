@@ -1,0 +1,19 @@
+{
+  "name": "roundtable-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Roundtable: human + Claude + ChatGPT + Gemini meeting room (MCP / web participants)",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^2.0.3",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  }
+}
