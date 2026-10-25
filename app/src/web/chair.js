@@ -48,7 +48,7 @@ function safeEqual(a, b) {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
-export function chairRoutes({ rt, hub, config, saveConfig, port, rotateToken }) {
+export function chairRoutes({ rt, hub, store, config, saveConfig, port, rotateToken }) {
   const allowedHost = (h) => {
     const p = typeof port === "function" ? port() : port;
     return [`127.0.0.1:${p}`, `localhost:${p}`, `[::1]:${p}`].includes(h);
@@ -150,6 +150,14 @@ export function chairRoutes({ rt, hub, config, saveConfig, port, rotateToken }) 
         return res.end(JSON.stringify(rt.exportJson(), null, 2));
       }
       if (req.method === "GET" && url.pathname === "/api/probe-report") return json(res, 200, { reports: rt.probeReport() });
+      if (req.method === "GET" && url.pathname === "/api/log") {
+        const m = rt.active;
+        if (!m) return json(res, 200, { events: [] });
+        const limit = Math.min(Number(url.searchParams.get("limit") || 300), 2000);
+        // Raw text of rejected posts stays in the file; the log view shows lengths only.
+        const events = store.load(m.id).events.slice(-limit).map((e) => (e.type === "post_rejected" ? { ...e, data: { ...e.data, text: e.data.text == null ? null : `（${e.data.text.length}字）` } } : e));
+        return json(res, 200, { events });
+      }
 
       if (req.method === "POST" && url.pathname.startsWith("/api/")) {
         if (!safeEqual(req.headers["x-roundtable-chair"], config.chairToken)) return json(res, 403, { error: "forbidden", message: "議長トークンがありません" });

@@ -93,7 +93,7 @@ export async function startApp({
     config.tokens[id] = newToken();
     saveConfig();
   };
-  const cHandler = chairRoutes({ rt, hub, config, saveConfig, port: () => chairServer.address().port, rotateToken });
+  const cHandler = chairRoutes({ rt, hub, store, config, saveConfig, port: () => chairServer.address().port, rotateToken });
   chairServer = http.createServer((req, res) => {
     cHandler(req, res).catch((e) => {
       log(`[chair] ${e.stack || e.message}`);

@@ -9,7 +9,8 @@
   },
   "scripts": {
     "start": "node src/main.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "demo:mock": "node scripts/demo-mock.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/core": "^2.4.0",
