@@ -5,7 +5,7 @@
 // which check membership and request ownership. No tool can change meeting
 // settings; those exist only in the chair UI on localhost.
 
-import { McpServer, createMcpHandler, ProtocolError } from "@modelcontextprotocol/server";
+import { McpServer, createMcpHandler, isLegacyRequest, ProtocolError, WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import * as z from "zod/v4";
 import { CommandError } from "../core/engine.js";
@@ -333,6 +333,22 @@ export function createMcpEndpoint({ rt, hub, participantForToken, waitMaxSec = (
     return server;
   }
 
+  // 2025-era (legacy) requests are answered as plain JSON instead of the
+  // SDK's default single-event SSE body, because some tunnels (e.g.
+  // Cloudflare quick tunnels) do not pass SSE. 2026-07-28 requests use the
+  // SDK's modern handler, which already answers JSON unless it must stream.
+  async function legacyJson(participant, request, parsedBody) {
+    const server = buildServer(participant, { era: "legacy", requestInfo: request });
+    const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    await server.connect(transport);
+    try {
+      return await transport.handleRequest(request, { parsedBody });
+    } finally {
+      transport.close().catch(() => {});
+      server.close().catch(() => {});
+    }
+  }
+
   // One handler per participant (the factory closes over the participant).
   const handlers = new Map();
   return {
@@ -340,13 +356,29 @@ export function createMcpEndpoint({ rt, hub, participantForToken, waitMaxSec = (
       const participant = participantForToken(token);
       if (!participant) return null;
       if (!handlers.has(participant)) {
-        handlers.set(
-          participant,
-          createMcpHandler((ctx) => buildServer(participant, ctx), {
-            legacy: "stateless",
-            onerror: (e) => log(`[mcp:${participant}] ${e.message}`),
-          }),
-        );
+        const modern = createMcpHandler((ctx) => buildServer(participant, ctx), {
+          legacy: "reject",
+          onerror: (e) => log(`[mcp:${participant}] ${e.message}`),
+        });
+        handlers.set(participant, {
+          async fetch(request, options) {
+            let parsedBody;
+            if (request.method === "POST") {
+              const raw = await request.text();
+              try {
+                parsedBody = JSON.parse(raw);
+              } catch {
+                parsedBody = undefined;
+              }
+              request = new Request(request.url, { method: "POST", headers: request.headers, body: raw, signal: request.signal });
+            }
+            if (request.method !== "POST" && request.method !== "OPTIONS") {
+              return new Response(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed." }, id: null }), { status: 405, headers: { allow: "POST", "content-type": "application/json" } });
+            }
+            if (parsedBody !== undefined && (await isLegacyRequest(request, parsedBody))) return legacyJson(participant, request, parsedBody);
+            return modern.fetch(request, { ...options, parsedBody });
+          },
+        });
       }
       return { participant, handler: handlers.get(participant) };
     },

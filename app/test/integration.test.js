@@ -305,3 +305,31 @@ test("restart mid-meeting: record, open request and subscriptions survive", asyn
     await env.app.close();
   }
 });
+
+test("transport: both protocol eras answer plain JSON (tunnels without SSE)", async () => {
+  const env = await boot();
+  const { app } = env;
+  try {
+    await env.chair("meeting", { topic: "通信方式" });
+    const url = env.mcpUrl("claude");
+    const h = { "content-type": "application/json", accept: "application/json, text/event-stream" };
+    const init = await fetch(url, { method: "POST", headers: h, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "legacy", version: "1" } } }) });
+    assert.equal(init.status, 200);
+    assert.match(init.headers.get("content-type"), /application\/json/);
+    const j = await init.json();
+    assert.equal(j.result.protocolVersion, "2025-06-18");
+    assert.ok(j.result.capabilities.events, "events capability advertised");
+    const list = await fetch(url, { method: "POST", headers: { ...h, "mcp-protocol-version": "2025-06-18" }, body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }) });
+    assert.match(list.headers.get("content-type"), /application\/json/);
+    const names = (await list.json()).result.tools.map((t) => t.name);
+    for (const n of ["get_my_turn", "wait_for_my_turn", "post_message", "report_problem", "open_roundtable_panel"]) assert.ok(names.includes(n), n);
+    const disc = await fetch(url, { method: "POST", headers: { ...h, "mcp-protocol-version": "2026-07-28", "mcp-method": "server/discover" }, body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "server/discover", params: { _meta: { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientInfo": { name: "t", version: "1" }, "io.modelcontextprotocol/clientCapabilities": {} } } }) });
+    assert.match(disc.headers.get("content-type"), /application\/json/);
+    const d = await disc.json();
+    assert.deepEqual(d.result.supportedVersions, ["2026-07-28"]);
+    assert.ok(d.result.capabilities.events);
+    assert.equal((await fetch(url)).status, 405);
+  } finally {
+    await app.close();
+  }
+});
