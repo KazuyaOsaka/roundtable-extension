@@ -199,7 +199,12 @@ export function reduce(m, ev) {
       break;
 
     case "trigger_claimed":
-      m.requests[d.requestId].triggers.push({ instanceId: d.instanceId, at: ev.at, result: null, detail: null });
+      m.requests[d.requestId].triggers.push({ channel: d.channel || "panel", instanceId: d.instanceId, manual: !!d.manual, at: ev.at, result: null, detail: null });
+      m.requests[d.requestId].retriggerAllowed = false;
+      break;
+
+    case "wake_attempt":
+      m.requests[d.requestId].triggers.push({ channel: d.channel, instanceId: d.ref, manual: false, at: ev.at, result: d.result, detail: d.detail || null, resultAt: ev.at });
       m.requests[d.requestId].retriggerAllowed = false;
       break;
 

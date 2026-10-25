@@ -37,14 +37,30 @@ export const DEFAULT_SETTINGS = {
   triggerGraceSec: 8,
   lengthHint: "800字以内",
   maxTextChars: 20000,
-  // How each AI is woken for its next turn:
+  // How each AI is woken for its next turn (any combination):
   //   wait   — it stays in its running task and calls wait_for_my_turn
-  //   widget — it ends its task; the Roundtable panel (MCP App) sends the
-  //            next-turn message into its chat
-  //   hybrid — both (whichever picks the request up first wins)
-  //   web    — it reads/posts through the participant web page
-  wake: { claude: "hybrid", chatgpt: "hybrid", gemini: "web" },
+  //   panel  — it ends its task; the Roundtable panel (MCP App) sends the
+  //            next-turn message into its chat (ui/message)
+  //   events — it ends its task; the server pushes an MCP Events webhook
+  //            (ChatGPT Work chats)
+  // Whichever channel picks the request up first wins; panel/events are
+  // only used when the request is still undelivered after the grace period,
+  // and only one wake-up is sent per request unless the chair allows another.
+  wake: {
+    claude: { wait: true, panel: true, events: false },
+    chatgpt: { wait: true, panel: false, events: true },
+    gemini: { wait: true, panel: false, events: false },
+  },
 };
+
+export function mergeWake(base, patch = {}) {
+  const out = structuredClone(base);
+  for (const id of AI_IDS) {
+    const p = patch[id];
+    if (p && typeof p === "object") for (const k of ["wait", "panel", "events"]) if (k in p) out[id][k] = !!p[k];
+  }
+  return out;
+}
 
 const OPEN = "open";
 
@@ -127,7 +143,7 @@ export class Roundtable extends EventEmitter {
     const mem = members || Object.fromEntries(AI_IDS.map((id) => [id, { read: true, write: ord.includes(id) }]));
     const d = new Date(this.now());
     const id = `M${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}-${crypto.randomBytes(3).toString("hex")}`;
-    const st = { ...structuredClone(DEFAULT_SETTINGS), ...settings, wake: { ...DEFAULT_SETTINGS.wake, ...(settings.wake || {}) } };
+    const st = { ...structuredClone(DEFAULT_SETTINGS), ...settings, wake: mergeWake(DEFAULT_SETTINGS.wake, settings.wake) };
     this._emit(null, "meeting_created", CHAIR_ID, {
       id,
       title: (title || "").trim() || `会議 ${d.toISOString().slice(0, 16).replace("T", " ")}`,
@@ -199,7 +215,9 @@ export class Roundtable extends EventEmitter {
     const allowed = ["requestTimeoutSec", "triggerGraceSec", "lengthHint", "wake"];
     const s = {};
     for (const k of allowed) if (k in settings) s[k] = settings[k];
-    if (s.wake) s.wake = { ...m.settings.wake, ...s.wake };
+    if (s.wake) s.wake = mergeWake(m.settings.wake, s.wake);
+    if (s.triggerGraceSec != null && !(s.triggerGraceSec >= 0 && s.triggerGraceSec <= 600))
+      throw new CommandError("bad_input", "通知の猶予は0〜600秒");
     if (s.requestTimeoutSec != null && !(s.requestTimeoutSec >= 30 && s.requestTimeoutSec <= 3600))
       throw new CommandError("bad_input", "依頼の期限は30〜3600秒");
     this._emit(m, "settings_updated", CHAIR_ID, { settings: s });
@@ -632,8 +650,10 @@ export class Roundtable extends EventEmitter {
   }
 
   // Long-poll variant: resolves when a request appears, the meeting ends, or
-  // the timeout passes. Never blocks forever.
-  waitForTurn(participant, timeoutMs) {
+  // the timeout passes. Never blocks forever. If the caller goes away
+  // (`signal` aborts), nothing is marked delivered, so the turn is not lost.
+  waitForTurn(participant, timeoutMs, signal) {
+    if (signal?.aborted) return Promise.resolve({ status: "aborted" });
     const first = this.deliver(participant, "wait");
     if (first.status !== "not_your_turn") return Promise.resolve(first);
     const p = this.presence[participant];
@@ -646,26 +666,25 @@ export class Roundtable extends EventEmitter {
         if (done) return;
         done = true;
         clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
         set.delete(fn);
         if (!set.size) p.waitingSince = null;
         resolve(res);
       };
-      const fn = () => {
+      const attempt = (onNone) => {
+        if (signal?.aborted) return finish({ status: "aborted" });
         try {
           const r = this.deliver(participant, "wait");
           if (r.status !== "not_your_turn") finish(r);
+          else if (onNone) finish(onNone(r));
         } catch (e) {
           finish({ status: "error", message: e.message });
         }
       };
-      const timer = setTimeout(() => {
-        try {
-          const r = this.deliver(participant, "wait");
-          finish(r.status === "not_your_turn" ? { status: "no_turn_yet", meeting_id: r.meeting_id } : r);
-        } catch (e) {
-          finish({ status: "error", message: e.message });
-        }
-      }, timeoutMs);
+      const fn = () => attempt(null);
+      const onAbort = () => finish({ status: "aborted" });
+      const timer = setTimeout(() => attempt((r) => ({ status: "no_turn_yet", meeting_id: r.meeting_id })), timeoutMs);
+      signal?.addEventListener("abort", onAbort, { once: true });
       set.add(fn);
     });
   }
@@ -780,10 +799,11 @@ export class Roundtable extends EventEmitter {
   // What the AI should do after posting, depending on how it is woken.
   _nextHint(m, participant) {
     if (m.status !== "open") return "会議は終了しました。これ以上ツールを呼ぶ必要はありません。";
-    const mode = m.settings.wake[participant];
-    if (mode === "wait") return "次は wait_for_my_turn を呼んで、次の番を待ってください（no_turn_yet が返ったら再度呼ぶ）。";
-    if (mode === "widget") return "ここで応答を終えてください。次の番が来たら Roundtable パネルが通知します。";
-    if (mode === "hybrid") return "続けて wait_for_my_turn を呼んで待機してください。待機を続けられない場合は応答を終えてかまいません（次の番はパネルが通知します）。";
+    const w = m.settings.wake[participant];
+    const other = w.events ? "次の番は Roundtable のイベント通知で届きます" : w.panel ? "次の番は Roundtable パネルが通知します" : null;
+    if (w.wait && other) return `続けて wait_for_my_turn を呼んで次の番を待ってください（no_turn_yet が返ったら再度呼ぶ）。待機を続けられない場合は応答を終えてかまいません（${other}）。`;
+    if (w.wait) return "続けて wait_for_my_turn を呼んで次の番を待ってください（no_turn_yet が返ったら再度呼ぶ）。";
+    if (other) return `ここで応答を終えてください。${other}。`;
     return "次の番は参加者ページに表示されます。";
   }
 
@@ -849,10 +869,10 @@ export class Roundtable extends EventEmitter {
     if (!m) return { status: "no_meeting" };
     this._member(m, participant, "read");
     const req = m.status === "open" ? this._nextOpenFor(m, participant) : null;
-    const mode = m.settings.wake[participant];
+    const wake = m.settings.wake[participant];
     const canTrigger =
       !!req &&
-      ["widget", "hybrid"].includes(mode) &&
+      wake.panel &&
       req.deliveries === 0 &&
       this.now() - req.createdAt >= m.settings.triggerGraceSec * 1000 &&
       (req.triggers.length === 0 || req.retriggerAllowed);
@@ -860,7 +880,7 @@ export class Roundtable extends EventEmitter {
       status: m.status,
       meeting_id: m.id,
       title: m.title,
-      wake_mode: mode,
+      wake,
       run_state: this._run(m)?.state || "idle",
       request: req ? { id: req.id, phase: req.phase, delivered: req.deliveries > 0, triggers: req.triggers.length } : null,
       should_trigger: canTrigger,
@@ -869,23 +889,55 @@ export class Roundtable extends EventEmitter {
   }
 
   // Exactly one panel instance wins the right to send the wake-up message
-  // for a request (several panels may be mounted in the same chat).
-  claimTrigger(participant, { requestId, instanceId }) {
+  // for a request (several panels may be mounted in the same chat). `manual`
+  // means a person pressed the panel button; it skips the grace period and
+  // the panel setting but still never wakes for a delivered/closed request.
+  claimTrigger(participant, { requestId, instanceId, manual = false }) {
     const m = this.requireOpen();
     this._member(m, participant, "write");
     const req = m.requests[requestId];
     if (!req || req.participant !== participant) throw new CommandError("forbidden", "この依頼はあなた宛てではありません");
-    const mode = m.settings.wake[participant];
-    if (!["widget", "hybrid"].includes(mode)) return { granted: false, reason: "wake_mode_disallows" };
     if (req.status !== OPEN) return { granted: false, reason: "request_closed" };
     if (req.deliveries > 0) return { granted: false, reason: "already_delivered" };
-    if (this.now() - req.createdAt < m.settings.triggerGraceSec * 1000) return { granted: false, reason: "grace_period" };
-    if (req.triggers.length && !req.retriggerAllowed) return { granted: false, reason: "already_triggered" };
-    this._emit(m, "trigger_claimed", participant, { requestId, instanceId: String(instanceId || "").slice(0, 64) });
-    const message =
+    if (!manual) {
+      if (!m.settings.wake[participant].panel) return { granted: false, reason: "panel_wake_disabled" };
+      if (this.now() - req.createdAt < m.settings.triggerGraceSec * 1000) return { granted: false, reason: "grace_period" };
+      if (req.triggers.length && !req.retriggerAllowed) return { granted: false, reason: "already_triggered" };
+    }
+    this._emit(m, "trigger_claimed", participant, { requestId, channel: "panel", instanceId: String(instanceId || "").slice(0, 64), manual: !!manual });
+    return { granted: true, message: this.wakeMessage(req) };
+  }
+
+  wakeMessage(req) {
+    return (
       `【Roundtable】あなたの番です（依頼 ${req.id}）。` +
-      `Roundtable の get_my_turn ツールを request_id="${req.id}" で呼んで依頼内容を確認し、post_message で回答してください。`;
-    return { granted: true, message };
+      `Roundtable の get_my_turn ツールを request_id="${req.id}" で呼んで依頼内容を確認し、post_message で回答してください。`
+    );
+  }
+
+  // Server-side wake channels (MCP Events) ask here before sending, so that
+  // the same rules as the panel apply: one wake-up per request.
+  mayPushWake(participant, requestId) {
+    const m = this.active;
+    if (!m || m.status !== "open") return false;
+    const req = m.requests[requestId];
+    if (!req || req.participant !== participant || req.status !== OPEN || req.deliveries > 0) return false;
+    if (!m.settings.wake[participant].events) return false;
+    if (req.triggers.length && !req.retriggerAllowed) return false;
+    return true;
+  }
+
+  recordWake(participant, requestId, { channel, ref, result, detail }) {
+    const m = this._meetingForRequest(requestId);
+    if (!m) return;
+    this._emit(m, "wake_attempt", "system", {
+      requestId,
+      participant,
+      channel,
+      ref: String(ref || "").slice(0, 80),
+      result,
+      detail: String(detail || "").slice(0, 500),
+    });
   }
 
   triggerResult(participant, { requestId, instanceId, result, detail }) {
@@ -1009,10 +1061,14 @@ export class Roundtable extends EventEmitter {
       const rb = row(b, run.probe.codeB);
       let wakeRoute = null;
       if (rb?.firstDeliveredAt) {
+        const before = rb.triggers.filter((t) => t.at <= rb.firstDeliveredAt);
+        const last = before[before.length - 1];
         if (rb.deliveredVia === "wait") wakeRoute = "稼働中タスク内の待機（wait_for_my_turn）";
-        else if (rb.triggers.length) wakeRoute = "処理終了後のイベント再起動（パネル通知 → get_my_turn）";
-        else if (rb.deliveredVia === "web") wakeRoute = "参加者ページ";
-        else wakeRoute = "通知記録なしで get_my_turn（人の入力など、経路不明）";
+        else if (rb.deliveredVia === "web") wakeRoute = "参加者ページ（ブラウザ経由）";
+        else if (last?.manual) wakeRoute = "人の操作（パネルの手動通知ボタン）";
+        else if (last?.channel === "mcp_events") wakeRoute = "処理終了後のイベント再起動（MCP Events → get_my_turn）";
+        else if (last?.channel === "panel") wakeRoute = "処理終了後のイベント再起動（MCP App パネル → get_my_turn）";
+        else wakeRoute = "通知記録なしで get_my_turn（人の入力の可能性・経路不明）";
       }
       return {
         runId: run.id,

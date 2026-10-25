@@ -296,7 +296,7 @@ test("message text cannot change meeting settings", () => {
 
 test("panel trigger: one claim per request, unknown result is not resent automatically", () => {
   const { rt, clock } = makeRt();
-  const m = newMeeting(rt, { settings: { wake: { claude: "widget" } } });
+  const m = newMeeting(rt, { settings: { wake: { claude: { wait: false, panel: true } } } });
   rt.chairPost({ text: "Q", ask: "claude" });
   const req = Object.values(m.requests)[0];
   assert.equal(rt.claimTrigger("claude", { requestId: req.id, instanceId: "w1" }).reason, "grace_period");
@@ -309,7 +309,7 @@ test("panel trigger: one claim per request, unknown result is not resent automat
   assert.equal(rt.participantView(m, "claude").state, "needs_confirmation");
   rt.authorizeRetrigger(req.id);
   assert.equal(rt.claimTrigger("claude", { requestId: req.id, instanceId: "w2" }).granted, true);
-  // wait-mode participants are never triggered by the panel
+  // a participant cannot claim someone else's request
   assert.throws(() => rt.claimTrigger("chatgpt", { requestId: req.id, instanceId: "x" }), CommandError);
 });
 
