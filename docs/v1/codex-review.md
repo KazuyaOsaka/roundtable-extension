@@ -6,7 +6,8 @@
 git fetch origin ccr-85719f93-q7j8p2 && git checkout ccr-85719f93-q7j8p2
 cd app
 npm ci
-npm test                 # 32件。期待値: "# pass 32" "# fail 0"
+npm test                 # 45件。期待値: "# pass 45" "# fail 0"（HTTPS 試験に openssl を使用）
+npm run check:panel      # パネルを公式ホストSDK（AppBridge）で動かす。Playwright＋Chromium が必要
 npm run demo:mock        # 模擬参加者つきで起動 → http://127.0.0.1:8787/
 ```
 
@@ -29,7 +30,8 @@ npm run demo:mock        # 模擬参加者つきで起動 → http://127.0.0.1:8
 | `app/src/web/participant.js` | トンネルで公開するルート（`/mcp/<token>`・`/p/<token>`） |
 | `app/src/web/chair.js` | 議長 API（localhost のみ）と SSE |
 | `app/public/` | 議長画面 |
-| `app/test/` | 単体・結合試験。`mocks.js` は模擬参加者 |
+| `app/test/` | 単体・結合試験。`mocks.js` は模擬参加者。`review-fixes.test.js` は独立レビューの指摘の回帰試験 |
+| `app/scripts/check-panel-host.mjs` | パネルを公式ホストSDKで動かす検証 |
 
 ## 重点的に見てほしい点
 
@@ -40,12 +42,12 @@ npm run demo:mock        # 模擬参加者つきで起動 → http://127.0.0.1:8
    - `timeUp` と `maxTurns` の境界
 2. **再生の決定性**：reducer が時計や外部状態を読んでいないか。`request_delivered` で差分の範囲（`deltaExclude`・`seen`）を確定させる処理が、再生で同じ結果になるか。
 3. **独立ラウンドの見え方**：同じラウンドの他AIの回答が漏れないこと（`hideAiAfterSeq`）。次のラウンドで、漏れも重複もなく届くこと。
-4. **起こす通知の一回性**：パネルの claim と MCP Events の `mayPushWake` が、経路をまたいで1依頼1回になっているか。結果が「不明」のときに自動で再送しないか。
+4. **起こす通知の一回性**：パネルの `claimTrigger` と MCP Events の `claimPushWake` が、経路をまたいで1依頼1回になっているか。結果が「不明」「失敗」のときに自動で再送しないか。
 5. **MCP Events の安全性**（`events.js`）
    - 名前解決したアドレスへの固定接続、private アドレスの拒否、リダイレクト不可
    - 検証チャレンジの比較
    - 購読IDの決定性
-   - 再送するのは同じイベントIDのときだけか
+   - 自動再送をしないこと（議長の許可で送る場合は新しいイベントIDになる）
    - `RT_ALLOW_PRIVATE_CALLBACKS` が本番で有効にならないか
 6. **トランスポート**：旧版（2025）のリクエストを JSON 応答へ振り分ける部分（`server.js` の `handlerFor`）。待機中に接続が切れた場合の扱い（`waitForTurn` の `signal`）。
 7. **ツール注釈の正直さ**：`get_my_turn`／`wait_for_my_turn` は「受信済み」の記録だけを書き、`readOnlyHint: true` にしています。この判断の妥当性を見てください。`post_message` は書込み（非破壊・冪等）と申告しています。
