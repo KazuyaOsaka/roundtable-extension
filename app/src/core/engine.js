@@ -1008,6 +1008,8 @@ export class Roundtable extends EventEmitter {
       widgetSeenAt: pr.widgetSeenAt,
       widgetInstances: pr.widgetInstances.size,
       openRequest: req ? { id: req.id, createdAt: req.createdAt, deadlineAt: req.deadlineAt, deliveries: req.deliveries, triggers: req.triggers } : null,
+      // A failed/expired request the chair may skip to move the run on.
+      skippable: !req && p.error?.requestId && m.requests[p.error.requestId]?.runId === m.runId ? p.error.requestId : null,
       observation: p.observation,
     };
   }

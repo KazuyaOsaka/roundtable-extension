@@ -160,7 +160,9 @@ function renderMeeting(m) {
               el("button", { onclick: () => act("skip", { requestId: req.id }) }, "スキップ"),
               req.triggers.length && !req.deliveries ? el("button", { onclick: () => act("retrigger", { requestId: req.id }) }, "再通知を許可") : null,
             )
-          : null,
+          : p.skippable
+            ? el("div", { class: "row wrap small" }, el("span", { class: "muted" }, "「再開」で同じ参加者に再依頼／"), el("button", { onclick: () => act("skip", { requestId: p.skippable }) }, "この番をスキップ"))
+            : null,
       );
     }),
   );

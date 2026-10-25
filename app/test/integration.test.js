@@ -333,3 +333,28 @@ test("transport: both protocol eras answer plain JSON (tunnels without SSE)", as
     await app.close();
   }
 });
+
+test("restart with a pending request: the MCP Events wake-up is still sent", async () => {
+  const ev = eventsParticipant("ChatGPT");
+  const dir = tmpDir();
+  let env = await boot(dir, [ev.receiver]);
+  try {
+    await env.chair("meeting", { topic: "再起動と通知", settings: { triggerGraceSec: 1, wake: { chatgpt: { wait: false, events: true } } } });
+    let c = await mcpClient(env.mcpUrl("chatgpt"), { modern: true });
+    await ev.subscribe(c);
+    await c.close();
+    await env.chair("post", { text: "Q", ask: "chatgpt" }); // push is due 1s later...
+    await env.app.close(); // ...but the server stops before that
+    assert.equal(ev.received.length, 0);
+    env = await boot(dir, [ev.receiver]);
+    c = await mcpClient(env.mcpUrl("chatgpt"), { modern: true });
+    ev.client = c;
+    await until(() => aiMessages(env.app.rt).length === 1);
+    await Promise.all(ev.runs);
+    const req = Object.values(env.app.rt.active.requests)[0];
+    assert.equal(req.triggers.filter((t) => t.channel === "mcp_events").length, 1, "exactly one wake-up");
+    await c.close();
+  } finally {
+    await env.app.close();
+  }
+});

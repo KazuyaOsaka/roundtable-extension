@@ -131,6 +131,15 @@ export class EventHub {
     this.subs = new Map(Object.entries(store.readJson("subscriptions.json", {})));
     this.verified = new Map(); // `${participant} ${url}` -> verifiedAt
     this.timers = new Set();
+    // Requests still waiting from before a restart get their wake-up now
+    // (push() itself refuses if one was already sent or it was picked up).
+    const m = rt.active;
+    if (m && m.status === "open") {
+      for (const id of m.requestOrder) {
+        const req = m.requests[id];
+        if (req.status === "open" && req.deliveries === 0 && !req.triggers.length) this._schedule(req.participant, req.id);
+      }
+    }
     rt.on("event", ({ event }) => {
       if (event.type === "request_created") this._schedule(event.data.participant, event.data.id);
       if (event.type === "retrigger_authorized") {
