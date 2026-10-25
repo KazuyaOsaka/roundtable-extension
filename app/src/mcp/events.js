@@ -85,7 +85,7 @@ export function isPublicAddress(addr) {
 // POST to an https URL after resolving and validating the address, pinning
 // the connection to that address (no DNS rebinding) and never following
 // redirects. Returns { status, body }.
-export async function safePost(url, headers, body, { timeoutMs = 10000, allowPrivate = false } = {}) {
+export async function safePost(url, headers, body, { timeoutMs = 10000, allowPrivate = false, ca } = {}) {
   const u = new URL(url);
   if (u.protocol !== "https:") throw new EventsError(-32015, "callback must be https", { reason: "insecure_url" });
   const addrs = await dns.lookup(u.hostname, { all: true, verbatim: true });
@@ -101,8 +101,11 @@ export async function safePost(url, headers, body, { timeoutMs = 10000, allowPri
         port: u.port || 443,
         path: u.pathname + u.search,
         headers: { ...headers, "content-length": Buffer.byteLength(body) },
-        lookup: (_h, _o, cb) => cb(null, ok.address, ok.family),
+        // Node calls lookup with { all: true } (happy-eyeballs) and then
+        // expects an array; answer in whichever shape was asked for.
+        lookup: (_h, o, cb) => (o && o.all ? cb(null, [{ address: ok.address, family: ok.family }]) : cb(null, ok.address, ok.family)),
         timeout: timeoutMs,
+        ...(ca ? { ca } : {}),
       },
       (res) => {
         let data = "";
@@ -200,7 +203,7 @@ export class EventHub {
     if (url.protocol !== "https:") throw new EventsError(-32015, "callback must be https", { reason: "insecure_url" });
 
     const id = "sub_" + crypto.createHash("sha256").update(`${participant}\n${url.href}\n${name}\n${canonical(args)}`).digest("hex").slice(0, 24);
-    const vkey = `${participant} ${url.href}`;
+    const vkey = `${participant} ${url.href} ${crypto.createHash("sha256").update(secret).digest("hex")}`;
     const cached = this.verified.get(vkey);
     if (!cached || this.now() - cached > VERIFY_CACHE_MS) {
       await this._verify(id, url.href, secret);
@@ -225,6 +228,11 @@ export class EventHub {
     });
     this._save();
     this.log(`[events] ${DISPLAY_NAMES[participant]} subscribed ${name} (${id}) until ${refreshBefore}`);
+    // A turn that was assigned before this subscription existed would
+    // otherwise never be announced.
+    const m = this.rt.active;
+    const waiting = m && m.status === "open" ? m.requestOrder.map((rid) => m.requests[rid]).find((r) => r.participant === participant && r.status === "open" && r.deliveries === 0 && !r.triggers.length) : null;
+    if (waiting) this._schedule(participant, waiting.id);
     return { id, refreshBefore, cursor: null, truncated: false };
   }
 
@@ -288,59 +296,50 @@ export class EventHub {
     this.timers.add(t);
   }
 
-  // Send the wake-up event for a request, at most once per request (the
-  // engine refuses after the first recorded attempt unless the chair allows
-  // a retry). Retries inside one attempt keep the same event ID, so the
-  // receiver can de-duplicate them.
+  // Send the wake-up event for a request: one subscription, one POST. The
+  // wake-up slot is taken synchronously (before any await), so the panel
+  // cannot also wake the same request. Nothing is resent automatically:
+  // if the outcome is unknown (timeout, reset, 5xx, 429) the chair decides.
   async push(participant, requestId) {
-    if (!this.rt.mayPushWake(participant, requestId)) return null;
-    const subs = this.activeFor(participant);
+    const subs = this.activeFor(participant).sort((a, b) => Date.parse(b.refreshedAt || b.createdAt) - Date.parse(a.refreshedAt || a.createdAt));
     if (!subs.length) return null;
+    const sub = subs[0];
+    if (!this.rt.claimPushWake(participant, requestId, sub.id)) return null;
     const m = this.rt._meetingForRequest(requestId);
     const req = m.requests[requestId];
-    const results = [];
-    for (const sub of subs) {
-      const event = {
-        eventId: `evt_${requestId}_${req.triggers.length}`,
-        name: TURN_EVENT,
-        timestamp: new Date(req.createdAt).toISOString(),
-        data: { request_id: req.id, meeting_id: m.id, participant, phase: req.phase || "", assigned_at: new Date(req.createdAt).toISOString() },
-        cursor: null,
-      };
-      const body = JSON.stringify(event);
-      let result = "unknown";
-      let detail = "";
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          const res = await this.poster(sub.url, this._headers(sub.secret, event.eventId, sub.id, body), body);
-          if (res.status >= 200 && res.status < 300) {
-            result = "sent";
-            detail = `HTTP ${res.status}`;
-            break;
-          }
-          detail = `HTTP ${res.status}`;
-          if (res.status === 410) {
-            this.subs.delete(sub.id);
-            this._save();
-            result = "failed";
-            break;
-          }
-          if (res.status === 413 || (res.status >= 400 && res.status < 500 && res.status !== 429)) {
-            result = "failed";
-            break;
-          }
-        } catch (e) {
-          detail = e.message;
-          result = "unknown";
-        }
-        if (attempt < 3) await new Promise((r) => setTimeout(r, 500 * 2 ** attempt).unref?.());
-      }
-      sub.lastDelivery = { at: new Date(this.now()).toISOString(), requestId, result, detail };
-      this._save();
-      this.rt.recordWake(participant, requestId, { channel: "mcp_events", ref: sub.id, result, detail });
-      results.push({ sub: sub.id, result, detail });
+    const event = {
+      eventId: `evt_${requestId}_${req.triggers.length}`,
+      name: TURN_EVENT,
+      timestamp: new Date(req.createdAt).toISOString(),
+      data: { request_id: req.id, meeting_id: m.id, participant, phase: req.phase || "", assigned_at: new Date(req.createdAt).toISOString() },
+      cursor: null,
+    };
+    const body = JSON.stringify(event);
+    let result;
+    let detail;
+    try {
+      const res = await this.poster(sub.url, this._headers(sub.secret, event.eventId, sub.id, body), body);
+      detail = `HTTP ${res.status}`;
+      if (res.status >= 200 && res.status < 300) result = "sent";
+      else if (res.status === 410) {
+        this.subs.delete(sub.id);
+        result = "failed";
+        detail += "（購読は取り消されました）";
+      } else if (res.status >= 400 && res.status < 500 && res.status !== 429) result = "failed";
+      else result = "unknown";
+    } catch (e) {
+      detail = e.message;
+      // Refused before anything was sent: definitely not delivered.
+      result = e instanceof EventsError || ["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"].includes(e.code) ? "failed" : "unknown";
     }
-    return results;
+    sub.lastDelivery = { at: new Date(this.now()).toISOString(), requestId, result, detail };
+    this._save();
+    try {
+      this.rt.triggerResult(participant, { requestId, instanceId: sub.id, result, detail });
+    } catch (e) {
+      this.log(`[events] could not record result: ${e.message}`);
+    }
+    return { sub: sub.id, result, detail };
   }
 
   close() {

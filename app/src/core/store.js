@@ -34,8 +34,10 @@ export class EventStore {
 
   // Returns { events, warnings }. A torn final line (crash mid-write) is
   // skipped with a warning; a corrupt line in the middle is a hard error,
-  // because silently dropping it could reorder the meeting.
-  load(meetingId) {
+  // because silently dropping it could reorder the meeting. With `repair`,
+  // the torn tail is cut off the file so the next append starts on a clean
+  // line (otherwise it would be glued onto the fragment and lost).
+  load(meetingId, { repair = false } = {}) {
     const file = this.meetingFile(meetingId);
     if (!fs.existsSync(file)) return { events: [], warnings: [] };
     const lines = fs.readFileSync(file, "utf8").split("\n");
@@ -50,6 +52,11 @@ export class EventStore {
         const rest = lines.slice(i + 1).some((l) => l.trim());
         if (rest) throw new Error(`corrupt event log ${file} line ${i + 1}`);
         warnings.push(`ignored torn last line in ${file}`);
+        if (repair) {
+          const keep = Buffer.byteLength(lines.slice(0, i).map((l) => l + "\n").join(""), "utf8");
+          fs.truncateSync(file, keep);
+          warnings.push(`truncated torn tail of ${file} at byte ${keep}`);
+        }
       }
     }
     return { events, warnings };
@@ -58,8 +65,18 @@ export class EventStore {
   append(meetingId, event) {
     let fd = this.fds.get(meetingId);
     if (fd === undefined) {
-      fd = fs.openSync(this.meetingFile(meetingId), "a");
+      const file = this.meetingFile(meetingId);
+      fd = fs.openSync(file, "a");
       this.fds.set(meetingId, fd);
+      // Never glue a new event onto a line that lacks its newline.
+      const size = fs.fstatSync(fd).size;
+      if (size > 0) {
+        const last = Buffer.alloc(1);
+        const rfd = fs.openSync(file, "r");
+        fs.readSync(rfd, last, 0, 1, size - 1);
+        fs.closeSync(rfd);
+        if (last[0] !== 0x0a) fs.writeSync(fd, "\n");
+      }
     }
     fs.writeSync(fd, JSON.stringify(event) + "\n");
     fs.fsyncSync(fd);

@@ -47,10 +47,12 @@ export const DEFAULT_SETTINGS = {
   // Whichever channel picks the request up first wins; panel/events are
   // only used when the request is still undelivered after the grace period,
   // and only one wake-up is sent per request unless the chair allows another.
+  //   web    — it reads/posts through the participant web page (/p/<token>);
+  //            when off, the page only shows a preview and hands out nothing
   wake: {
-    claude: { wait: true, panel: true, events: false },
-    chatgpt: { wait: true, panel: false, events: true },
-    gemini: { wait: true, panel: false, events: false },
+    claude: { wait: true, panel: true, events: false, web: false },
+    chatgpt: { wait: true, panel: false, events: true, web: false },
+    gemini: { wait: true, panel: false, events: false, web: true },
   },
 };
 
@@ -58,7 +60,7 @@ export function mergeWake(base, patch = {}) {
   const out = structuredClone(base);
   for (const id of AI_IDS) {
     const p = patch[id];
-    if (p && typeof p === "object") for (const k of ["wait", "panel", "events"]) if (k in p) out[id][k] = !!p[k];
+    if (p && typeof p === "object") for (const k of ["wait", "panel", "events", "web"]) if (k in p) out[id][k] = !!p[k];
   }
   return out;
 }
@@ -91,7 +93,7 @@ export class Roundtable extends EventEmitter {
   // ---------------------------------------------------------------- boot
   boot() {
     for (const id of this.store.listMeetingIds()) {
-      const { events, warnings } = this.store.load(id);
+      const { events, warnings } = this.store.load(id, { repair: true });
       this.warnings.push(...warnings);
       let m = null;
       for (const ev of events) m = reduce(m, ev);
@@ -133,14 +135,16 @@ export class Roundtable extends EventEmitter {
   // ---------------------------------------------------------------- chair commands
   createMeeting({ title, topic, instructions = "", order, roles = {}, members, settings = {} }) {
     if (!topic || !topic.trim()) throw new CommandError("bad_input", "議題を入力してください");
-    const prev = this.active;
-    if (prev && prev.status === "open") this.endMeeting("新しい会議を作成したため");
     const ord = this._checkOrder(order || DEFAULT_ORDER);
     const roleObjs = {};
     for (const id of AI_IDS) {
       const r = roles[id];
       roleObjs[id] = typeof r === "object" && r ? { preset: r.preset || "custom", name: r.name, text: r.text } : roleFromPreset(r || DEFAULT_ROLES[id] || "free");
+      if (!roleObjs[id].name || !roleObjs[id].text) throw new CommandError("bad_input", "役割名と内容が必要です");
     }
+    // Validate everything above before touching the current meeting.
+    const prev = this.active;
+    if (prev && prev.status === "open") this.endMeeting("新しい会議を作成したため");
     const mem = members || Object.fromEntries(AI_IDS.map((id) => [id, { read: true, write: ord.includes(id) }]));
     const d = new Date(this.now());
     const id = `M${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}-${crypto.randomBytes(3).toString("hex")}`;
@@ -229,6 +233,16 @@ export class Roundtable extends EventEmitter {
   chairPost({ text, ask = null, parallel = false }) {
     const m = this.requireOpen();
     if (!text || !text.trim()) throw new CommandError("bad_input", "発言が空です");
+    let targets = null;
+    if (ask) {
+      targets = ask === "all" ? m.order.filter((id) => m.members[id].write) : [ask];
+      if (!targets.length) throw new CommandError("forbidden", "書込権限のある参加者がいません");
+      for (const t of targets) {
+        if (!AI_IDS.includes(t)) throw new CommandError("bad_input", `不明な宛先: ${t}`);
+        if (!m.members[t].write) throw new CommandError("forbidden", `${DISPLAY_NAMES[t]} は書込権限がありません`);
+      }
+    }
+    // Nothing is changed until the input is known to be valid.
     const run = this._run(m);
     const interrupting = run && (run.state === "running" || run.state === "paused");
     if (interrupting && !ask) {
@@ -239,12 +253,7 @@ export class Roundtable extends EventEmitter {
       this._stopRun(m, run, "議長が新しく質問したため");
     }
     this._postMessage(m, { speaker: CHAIR_ID, text: text.trim(), status: "accepted" });
-    if (ask) {
-      const targets = ask === "all" ? m.order.filter((id) => m.members[id].write) : [ask];
-      for (const t of targets) {
-        if (!AI_IDS.includes(t)) throw new CommandError("bad_input", `不明な宛先: ${t}`);
-        if (!m.members[t].write) throw new CommandError("forbidden", `${DISPLAY_NAMES[t]} は書込権限がありません`);
-      }
+    if (targets) {
       this._startRun(m, {
         kind: "ask",
         presetId: null,
@@ -346,9 +355,17 @@ export class Roundtable extends EventEmitter {
     const m = this.requireOpen();
     const req = m.requests[requestId];
     if (!req) throw new CommandError("not_found", "依頼が見つかりません");
+    if (req.status === "answered" || req.status === "skipped") throw new CommandError("bad_state", "この依頼は既に回答済み・スキップ済みです");
     const run = m.runs[req.runId];
     if (req.status === OPEN) this._closeRequest(m, req, "skipped", "議長がスキップ");
-    if (run && run.id === m.runId && req.stepIndex === run.stepIndex) this._markStepDone(m, run, req.participant);
+    else this._emit(m, "request_closed", CHAIR_ID, { id: req.id, status: "skipped", reason: `議長がスキップ（${req.status} の後）` });
+    // Move the run past this turn only if it is the turn the run is on, so a
+    // stale or repeated click cannot skip the next participant.
+    if (run && run.id === m.runId && req.stepIndex === run.stepIndex) {
+      const step = run.steps[run.stepIndex];
+      const isCurrent = step && (step.parallel ? !run.stepDone.includes(req.participant) : step.participants[run.stepPos] === req.participant);
+      if (isCurrent) this._markStepDone(m, run, req.participant);
+    }
     if (run && run.state === "running") this._advance(m);
     return m;
   }
@@ -493,6 +510,11 @@ export class Roundtable extends EventEmitter {
       if (turnLimit || timeLimit) {
         // In-flight requests may still finish; nothing new is issued.
         if (!open.length) this._complete(m, run, turnLimit ? `回数上限 ${run.limits.maxTurns} 回に到達` : `時間上限 ${run.limits.maxMinutes} 分に到達`);
+        return;
+      }
+
+      if (!open.length && !run.order.some((id) => m.members[id].write)) {
+        this._emit(m, "run_state", "system", { runId: run.id, state: "paused", reason: "書込権限のある参加者がいません" });
         return;
       }
 
@@ -831,17 +853,29 @@ export class Roundtable extends EventEmitter {
     return { status: "recorded" };
   }
 
-  // Read access is limited to the active meeting and, while an independent
-  // request is open, to what existed when that request was issued.
+  // What a participant may read right now. While it has an open request:
+  // up to that request's context. While it still owes an answer in an
+  // independent round (e.g. its request was superseded and not yet
+  // re-issued): nothing from other AIs after the round started.
+  _readScope(m, participant) {
+    const open = this._nextOpenFor(m, participant);
+    if (open) return { upto: open.contextUpto, hideAfter: open.hideAiAfterSeq, open };
+    const run = this._run(m);
+    const step = run && ["running", "paused"].includes(run.state) ? run.steps[run.stepIndex] : null;
+    if (step?.independent && run.stepBaseSeq != null && step.participants.includes(participant) && !run.stepDone.includes(participant)) {
+      return { upto: m.nextSeq - 1, hideAfter: run.stepBaseSeq, open: null };
+    }
+    return { upto: m.nextSeq - 1, hideAfter: null, open: null };
+  }
+
   getMessages(participant, { fromSeq = 0, toSeq, limit = 20 } = {}) {
     this.touch(participant, "read");
     const m = this.requireActive();
     this._member(m, participant, "read");
-    const open = this._nextOpenFor(m, participant);
-    const horizon = open ? open.contextUpto : m.nextSeq - 1;
-    const upto = Math.min(toSeq ?? horizon, horizon);
-    const msgs = visibleMessages(m, "__nobody__", fromSeq, upto, open?.hideAiAfterSeq ?? null).slice(-Math.min(limit, 50));
-    return { meeting_id: m.id, horizon, messages: msgs.map((x) => fenceMessage(m, x)).join("\n") };
+    const sc = this._readScope(m, participant);
+    const upto = Math.min(toSeq ?? sc.upto, sc.upto);
+    const msgs = visibleMessages(m, "__nobody__", fromSeq, upto, sc.hideAfter).slice(-Math.min(limit, 50));
+    return { meeting_id: m.id, horizon: sc.upto, messages: msgs.map((x) => fenceMessage(m, x)).join("\n") };
   }
 
   brief(participant) {
@@ -849,9 +883,8 @@ export class Roundtable extends EventEmitter {
     const m = this.requireActive();
     this._member(m, participant, "read");
     const r = m.roles[participant];
-    const open = this._nextOpenFor(m, participant);
-    const horizon = open ? open.contextUpto : m.nextSeq - 1;
-    const recent = visibleMessages(m, "__nobody__", 0, horizon, open?.hideAiAfterSeq ?? null).slice(-6);
+    const sc = this._readScope(m, participant);
+    const recent = visibleMessages(m, "__nobody__", 0, sc.upto, sc.hideAfter).slice(-6);
     return {
       meeting_id: m.id,
       title: m.title,
@@ -862,7 +895,7 @@ export class Roundtable extends EventEmitter {
       your_role: r,
       order: m.order.map((id) => DISPLAY_NAMES[id]),
       recent: recent.map((x) => fenceMessage(m, x)).join("\n"),
-      open_request: open ? open.id : null,
+      open_request: sc.open ? sc.open.id : null,
     };
   }
 
@@ -905,6 +938,9 @@ export class Roundtable extends EventEmitter {
     if (!req || req.participant !== participant) throw new CommandError("forbidden", "この依頼はあなた宛てではありません");
     if (req.status !== OPEN) return { granted: false, reason: "request_closed" };
     if (req.deliveries > 0) return { granted: false, reason: "already_delivered" };
+    const last = req.triggers[req.triggers.length - 1];
+    if (manual && last && last.result !== "sent" && this.now() - last.at < 20000) return { granted: false, reason: "previous_wake_pending" };
+    if (manual && last && this.now() - last.at < 5000) return { granted: false, reason: "too_soon" };
     if (!manual) {
       if (!m.settings.wake[participant].panel) return { granted: false, reason: "panel_wake_disabled" };
       if (this.now() - req.createdAt < m.settings.triggerGraceSec * 1000) return { granted: false, reason: "grace_period" };
@@ -921,29 +957,18 @@ export class Roundtable extends EventEmitter {
     );
   }
 
-  // Server-side wake channels (MCP Events) ask here before sending, so that
-  // the same rules as the panel apply: one wake-up per request.
-  mayPushWake(participant, requestId) {
+  // Server-side wake channel (MCP Events): take the request's wake-up slot
+  // synchronously, under the same rules as the panel. Returns false if the
+  // request was already picked up or already woken.
+  claimPushWake(participant, requestId, ref) {
     const m = this.active;
     if (!m || m.status !== "open") return false;
     const req = m.requests[requestId];
     if (!req || req.participant !== participant || req.status !== OPEN || req.deliveries > 0) return false;
     if (!m.settings.wake[participant].events) return false;
     if (req.triggers.length && !req.retriggerAllowed) return false;
+    this._emit(m, "trigger_claimed", "system", { requestId, channel: "mcp_events", instanceId: String(ref || "").slice(0, 80), manual: false });
     return true;
-  }
-
-  recordWake(participant, requestId, { channel, ref, result, detail }) {
-    const m = this._meetingForRequest(requestId);
-    if (!m) return;
-    this._emit(m, "wake_attempt", "system", {
-      requestId,
-      participant,
-      channel,
-      ref: String(ref || "").slice(0, 80),
-      result,
-      detail: String(detail || "").slice(0, 500),
-    });
   }
 
   triggerResult(participant, { requestId, instanceId, result, detail }) {
@@ -974,7 +999,10 @@ export class Roundtable extends EventEmitter {
         const age = (now - req.createdAt) / 1000;
         if (lastTrig && lastTrig.result === "unknown") {
           state = "needs_confirmation";
-          detail = "通知の送信結果が不明（自動再送はしません）";
+          detail = "通知の送信結果が不明（自動再送はしません。必要なら「再通知を許可」）";
+        } else if (lastTrig && (lastTrig.result === "failed" || lastTrig.result === "rejected")) {
+          state = "needs_confirmation";
+          detail = `通知を送れませんでした（${lastTrig.detail || lastTrig.result}）。「再通知を許可」で1回だけ再送できます`;
         } else if (lastTrig && now - lastTrig.at > 30000) {
           state = "needs_confirmation";
           detail = "通知後30秒以上未受信。AI側の承認ダイアログや入力待ちを確認してください";
@@ -1009,7 +1037,8 @@ export class Roundtable extends EventEmitter {
       widgetInstances: pr.widgetInstances.size,
       openRequest: req ? { id: req.id, createdAt: req.createdAt, deadlineAt: req.deadlineAt, deliveries: req.deliveries, triggers: req.triggers } : null,
       // A failed/expired request the chair may skip to move the run on.
-      skippable: !req && p.error?.requestId && m.requests[p.error.requestId]?.runId === m.runId ? p.error.requestId : null,
+      skippable:
+        !req && p.error?.requestId && m.requests[p.error.requestId]?.runId === m.runId && !["answered", "skipped"].includes(m.requests[p.error.requestId].status) ? p.error.requestId : null,
       observation: p.observation,
     };
   }

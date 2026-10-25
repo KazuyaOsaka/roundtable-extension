@@ -70,17 +70,37 @@ export function participantRoutes({ rt, mcp, participantForToken }) {
       }
       const base = `/p/${parts[1]}`;
       const name = DISPLAY_NAMES[participant];
+      // Hand out turns only when this participant is set to use the page;
+      // otherwise (or with ?preview=1) just show what is there, so that the
+      // chair opening the link does not consume the AI's turn.
+      const m = rt.active;
+      const live = !!m && m.settings.wake[participant]?.web && url.searchParams.get("preview") !== "1";
       try {
         if (parts.length === 3 && parts[2] === "turn.txt" && req.method === "GET") {
+          if (!live) {
+            res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+            return res.end("STATUS: PREVIEW_ONLY");
+          }
           const d = rt.deliver(participant, "web");
           res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
           return res.end(d.status === "your_turn" ? `STATUS: YOUR_TURN\nREQUEST_ID: ${d.request.id}\n\n${d.text}` : `STATUS: ${d.status.toUpperCase()}`);
         }
         if (parts.length === 3 && parts[2] === "post" && req.method === "POST") {
+          if (!m || !m.settings.wake[participant]?.web) throw new CommandError("forbidden", "この参加者の参加者ページは無効です（議長画面で有効にしてください）");
           const form = new URLSearchParams(await readBody(req));
           const r = rt.post(participant, { requestId: form.get("request_id"), text: form.get("text") || "", via: "web" });
           res.writeHead(303, { location: `${base}?posted=${encodeURIComponent(r.status)}&seq=${r.seq ?? ""}` });
           return res.end();
+        }
+        if (parts.length === 2 && req.method === "GET" && !live) {
+          const open = m ? Object.values(m.requests).find((r) => r.participant === participant && r.status === "open") : null;
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+          return res.end(
+            page(
+              `Roundtable — ${name}（プレビュー）`,
+              `<h1>Roundtable 参加者ページ（${esc(name)}）</h1><div class="status" id="status">STATUS: PREVIEW_ONLY — プレビューです。依頼の受け渡しはしません。</div><p class="muted">${m ? `会議: ${esc(m.title)}／未回答の依頼: ${open ? esc(open.id) : "なし"}` : "会議はありません"}。参加者ページで参加させるには、議長画面「接続設定」でこの参加者の「参加者ページ」をオンにしてください。</p>`,
+            ),
+          );
         }
         if (parts.length === 2 && req.method === "GET") {
           const d = rt.deliver(participant, "web");

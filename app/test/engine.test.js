@@ -233,7 +233,7 @@ test("restore tolerates a torn last line", async () => {
   fs.appendFileSync(rt.store.meetingFile(m.id), '{"n":99,"type":"mess');
   const rt2 = reload(dir, clock);
   assert.equal(rt2.active.id, m.id);
-  assert.equal(rt2.warnings.length, 1);
+  assert.ok(rt2.warnings.some((w) => /torn/.test(w)));
   assert.equal(rt2.deliver("gemini", "get").status, "your_turn");
 });
 

@@ -10,7 +10,8 @@
   "scripts": {
     "start": "node src/main.js",
     "test": "node --test test/*.test.js",
-    "demo:mock": "node scripts/demo-mock.mjs"
+    "demo:mock": "node scripts/demo-mock.mjs",
+    "check:panel": "node scripts/check-panel-host.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/core": "^2.4.0",
@@ -21,6 +22,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@modelcontextprotocol/client": "^2.4.0"
+    "@modelcontextprotocol/client": "^2.4.0",
+    "esbuild": "^0.25.10"
   }
 }

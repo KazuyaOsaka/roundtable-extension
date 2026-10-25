@@ -191,6 +191,7 @@ export function reduce(m, ev) {
       if (["expired", "failed"].includes(d.status)) {
         m.participants[r.participant].error = { kind: d.status, detail: d.reason || "", at: ev.at, requestId: r.id };
       }
+      if (d.status === "skipped" && m.participants[r.participant].error?.requestId === r.id) m.participants[r.participant].error = null;
       break;
     }
 

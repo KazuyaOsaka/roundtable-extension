@@ -144,7 +144,7 @@ function renderMeeting(m) {
     ...S.participants.map((p) => {
       const req = p.openRequest;
       const lc = S.presence?.[p.id]?.lastClient;
-      const wake = [p.wake.wait && "待機", p.wake.panel && "パネル", p.wake.events && "MCP Events"].filter(Boolean).join("・") || "参加者ページ";
+      const wake = [p.wake.wait && "待機", p.wake.panel && "パネル", p.wake.events && "MCP Events", p.wake.web && "参加者ページ"].filter(Boolean).join("・") || "なし";
       return el(
         "div",
         { class: `pcard ${p.id}` },
@@ -158,7 +158,7 @@ function renderMeeting(m) {
               { class: "row wrap small" },
               el("span", {}, `期限 ${fmtTime(req.deadlineAt)}`),
               el("button", { onclick: () => act("skip", { requestId: req.id }) }, "スキップ"),
-              req.triggers.length && !req.deliveries ? el("button", { onclick: () => act("retrigger", { requestId: req.id }) }, "再通知を許可") : null,
+              !req.deliveries ? el("button", { onclick: () => act("retrigger", { requestId: req.id }) }, "再通知を許可") : null,
             )
           : p.skippable
             ? el("div", { class: "row wrap small" }, el("span", { class: "muted" }, "「再開」で同じ参加者に再依頼／"), el("button", { onclick: () => act("skip", { requestId: p.skippable }) }, "この番をスキップ"))
@@ -250,10 +250,10 @@ $("saveObs").addEventListener("click", async () => {
   toast("保存しました");
 });
 const PROBE_WAKE = {
-  wait: { wait: true, panel: false, events: false },
-  panel: { wait: false, panel: true, events: false },
-  events: { wait: false, panel: false, events: true },
-  web: { wait: false, panel: false, events: false },
+  wait: { wait: true, panel: false, events: false, web: false },
+  panel: { wait: false, panel: true, events: false, web: false },
+  events: { wait: false, panel: false, events: true, web: false },
+  web: { wait: false, panel: false, events: false, web: true },
 };
 async function updateProbePrompt() {
   const mode = $("probeMode").value;
@@ -398,7 +398,8 @@ function renderSetup() {
       s.mcpUrl ? el("div", { class: "row" }, el("code", {}, s.mcpUrl), copyBtn(s.mcpUrl)) : el("div", { class: "muted small" }, "公開URLを保存すると表示されます"),
       el("div", { class: "small" }, "参加者ページ（ブラウザで参加する場合）"),
       s.pageUrl ? el("div", { class: "row" }, el("code", {}, s.pageUrl), copyBtn(s.pageUrl)) : el("div", { class: "muted small" }, "—"),
-      el("div", { class: "row wrap" }, el("span", { class: "small" }, "次の番の起こし方:"), ch("wait", "タスク内で待機"), ch("panel", "パネル（MCP App）"), ch("events", "MCP Events")),
+      el("div", { class: "row wrap" }, el("span", { class: "small" }, "次の番の起こし方:"), ch("wait", "タスク内で待機"), ch("panel", "パネル（MCP App）"), ch("events", "MCP Events"), ch("web", "参加者ページ")),
+      w.events && !S.subscriptions.some((x) => x.participant === s.id && x.active) ? el("div", { class: "small fail" }, "MCP Events の購読がまだありません（開始時の指示を Work チャットに送ると作られます）") : null,
       el("details", {}, el("summary", { class: "small" }, "開始時の指示（MCP）"), el("div", { class: "copybox" }, el("pre", {}, s.prompts.mcp), copyBtn(s.prompts.mcp))),
       el("details", {}, el("summary", { class: "small" }, "開始時の指示（参加者ページ）"), el("div", { class: "copybox" }, el("pre", {}, s.prompts.web), copyBtn(s.prompts.web))),
       el("div", { class: "row" }, el("button", { onclick: () => confirm(`${s.name} の接続URLを作り直しますか？今の URL は使えなくなります。`) && act("rotate-token", { participant: s.id }) }, "URLを作り直す（漏れた場合）")),

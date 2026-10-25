@@ -6,7 +6,6 @@
 
 import fs from "node:fs";
 import { createRequire } from "node:module";
-import path from "node:path";
 
 const require = createRequire(import.meta.url);
 
@@ -17,8 +16,7 @@ let cachedBundle = null;
 // inlined; its trailing `export {...}` is turned into a global.
 function appBundle() {
   if (cachedBundle) return cachedBundle;
-  const pkgDir = path.dirname(require.resolve("@modelcontextprotocol/ext-apps/package.json"));
-  let src = fs.readFileSync(path.join(pkgDir, "dist/src/app-with-deps.js"), "utf8");
+  let src = fs.readFileSync(require.resolve("@modelcontextprotocol/ext-apps/app-with-deps"), "utf8");
   const i = src.lastIndexOf("export{");
   if (i < 0) throw new Error("unexpected ext-apps bundle format");
   const exportList = src.slice(i + "export{".length, src.indexOf("}", i));
@@ -69,7 +67,7 @@ export function panelHtml() {
 (async () => {
   const $ = (id) => document.getElementById(id);
   const log = (t, cls) => { const d = document.createElement("div"); d.textContent = new Date().toLocaleTimeString() + " " + t; if (cls) d.className = cls; $("log").prepend(d); };
-  const instanceId = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random())).replace(/-/g, "").slice(0, 12);
+  const instanceId = Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(16).padStart(2, "0")).join("");
   const { App } = window.McpApps;
   const app = new App({ name: "Roundtable Panel", version: "0.1.0" }, {});
   let current = null, busy = false, failures = 0;

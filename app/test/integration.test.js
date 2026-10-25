@@ -116,7 +116,7 @@ test("probe via each wake route is classified correctly", async () => {
     const panel = panelParticipant(claude, "Claude");
     const ge = webParticipant(env.pageUrl("gemini"), "Gemini");
 
-    const modes = { claude: { wait: false, panel: true, events: false }, chatgpt: { wait: false, panel: false, events: true }, gemini: { wait: true, panel: false, events: false } };
+    const modes = { claude: { wait: false, panel: true, events: false, web: false }, chatgpt: { wait: false, panel: false, events: true, web: false }, gemini: { wait: false, panel: false, events: false, web: true } };
     for (const p of ["claude", "chatgpt", "gemini"]) {
       await chair("probe", { participant: p, delaySec: 1, wake: modes[p] });
       await until(() => app.rt.active.runs[app.rt.active.runId].state === "completed");
@@ -356,5 +356,26 @@ test("restart with a pending request: the MCP Events wake-up is still sent", asy
     await c.close();
   } finally {
     await env.app.close();
+  }
+});
+
+test("participant page: preview does not consume a turn; posting needs the page enabled", async () => {
+  const env = await boot();
+  const { app, chair } = env;
+  try {
+    await chair("meeting", { topic: "プレビュー", settings: { wake: { claude: { web: false } } } });
+    await chair("post", { text: "Q", ask: "claude" });
+    const html = await (await fetch(env.pageUrl("claude"))).text();
+    assert.match(html, /PREVIEW_ONLY/);
+    const req = Object.values(app.rt.active.requests)[0];
+    assert.equal(req.deliveries, 0, "opening the link did not hand out the turn");
+    const r = await fetch(`${env.pageUrl("claude")}/post`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ request_id: req.id, text: "x" }), redirect: "manual" });
+    assert.equal(r.status, 403);
+    // Gemini (page enabled by default) gets the live page; ?preview=1 still previews
+    await chair("post", { text: "Q2", ask: "gemini" });
+    assert.match(await (await fetch(`${env.pageUrl("gemini")}?preview=1`)).text(), /PREVIEW_ONLY/);
+    assert.match(await (await fetch(env.pageUrl("gemini"))).text(), /YOUR_TURN/);
+  } finally {
+    await app.close();
   }
 });
