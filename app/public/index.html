@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Roundtable</title>
+<link rel="stylesheet" href="/style.css">
+<script>window.CHAIR_TOKEN = "__CHAIR_TOKEN__";</script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">Roundtable</div>
+  <div id="meetingTitle" class="muted">会議なし</div>
+  <div id="runBadge" class="badge">—</div>
+  <div class="spacer"></div>
+  <div id="conn" class="muted small">接続中…</div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button data-tab="meeting" class="active">会議</button>
+  <button data-tab="probe">接続試験</button>
+  <button data-tab="setup">接続設定</button>
+  <button data-tab="config">会議設定</button>
+  <button data-tab="record">記録・出力</button>
+</nav>
+
+<main>
+  <!-- ======================= 会議 ======================= -->
+  <section id="tab-meeting" class="tab active">
+    <div id="noMeeting" class="card hidden">
+      <h2>会議を始める</h2>
+      <p class="muted">議題を入れて作成すると、議長とClaude・ChatGPT・Geminiの会議室ができます。役割や発言順は「会議設定」でいつでも変更できます。接続がまだなら先に「接続設定」を済ませてください。</p>
+      <label>会議名<input id="newTitle" placeholder="例: 夜間照明の削減について"></label>
+      <label>議題・問い<textarea id="newTopic" rows="3" placeholder="例: 都市の夜間照明を半分にすると、何が起きるか"></textarea></label>
+      <label>前提・追加の指示（任意）<textarea id="newInstructions" rows="2"></textarea></label>
+      <button id="createMeeting" class="primary">会議を作成</button>
+    </div>
+
+    <div id="meetingView" class="layout hidden">
+      <div class="col-main">
+        <div class="card topic"><div class="muted small">議題（前提 v<span id="premiseVer"></span>）</div><div id="topicText"></div></div>
+        <div id="timeline" class="timeline" aria-live="polite"></div>
+        <div class="card composer">
+          <textarea id="chairText" rows="3" placeholder="議長として発言（Ctrl+Enter で「全員に聞く」）"></textarea>
+          <div class="row wrap">
+            <button data-ask="all" class="primary">全員に聞く</button>
+            <label class="inline small"><input type="checkbox" id="askParallel"> 独立回答（互いの回答を見ない）</label>
+            <span class="sep"></span>
+            <button data-ask="claude">Claude に聞く</button>
+            <button data-ask="chatgpt">ChatGPT に聞く</button>
+            <button data-ask="gemini">Gemini に聞く</button>
+            <span class="sep"></span>
+            <button data-ask="" title="質問せずに発言だけ記録します。自動進行中なら割込（一時停止）になります">発言のみ／割込</button>
+          </div>
+        </div>
+      </div>
+      <aside class="col-side">
+        <div class="card">
+          <h3>参加者</h3>
+          <div id="participants"></div>
+        </div>
+        <div class="card">
+          <h3>AIだけで続ける</h3>
+          <label>進め方<select id="autoPreset"></select></label>
+          <div class="row">
+            <label>回数上限<input id="autoTurns" type="number" min="1" max="60" value="6"></label>
+            <label>時間上限（分）<input id="autoMinutes" type="number" min="1" max="240" value="30"></label>
+          </div>
+          <div class="muted small">発言順: <span id="orderText"></span>（会議設定で変更）</div>
+          <div class="row wrap">
+            <button id="startAuto" class="primary">開始</button>
+            <button id="pause">一時停止</button>
+            <button id="resume">再開</button>
+            <button id="stop">停止</button>
+          </div>
+          <div id="runInfo" class="small muted"></div>
+        </div>
+        <div class="card">
+          <button id="endMeeting" class="danger">会議を終了</button>
+          <button id="newMeetingBtn">新しい会議</button>
+          <p class="muted small">終了後に届いた回答は記録だけされ、転送されません。</p>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ======================= 接続試験 ======================= -->
+  <section id="tab-probe" class="tab">
+    <div class="card">
+      <h2>接続試験（各社単独）</h2>
+      <p class="muted">依頼A → 回答A → 待機 → 依頼B → 回答B の往復と、依頼Bの受取経路を記録します。人手なしで再起動・投稿できたかは各社画面で確認し、承認や手動再開の回数を残してください。会議が必要です（会議タブで作成）。試験中は試験対象以外への依頼は出ません。</p>
+      <div class="row wrap">
+        <label>対象<select id="probeWho"><option value="claude">Claude</option><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option></select></label>
+        <label>依頼Bの受け取り方<select id="probeMode">
+          <option value="wait">タスク内で待機（wait_for_my_turn）</option>
+          <option value="panel">終了後に再起動：パネル（MCP App）</option>
+          <option value="events">終了後に再起動：MCP Events</option>
+          <option value="web">参加者ページ（ブラウザ）</option>
+        </select></label>
+        <label>依頼Bまでの待機<select id="probeDelay"><option value="0">すぐ</option><option value="30">30秒</option><option value="180" selected>3分</option><option value="300">5分</option></select></label>
+      </div>
+      <details open><summary class="small">手順と、この方式用の開始時の指示</summary>
+        <ol class="steps small">
+          <li>下の指示をコピーし、対象のAIの新しいチャット（ChatGPT は Work チャット）に貼って送信する。パネル方式なら、パネルが表示されたことを確認する。</li>
+          <li>AIが待機に入った（または応答を終えた）ことを確認してから「試験開始」を押す。以後はAIの画面に手を触れない（確認ダイアログが出たら、承認した回数を下の記録欄に書く）。</li>
+          <li>結果表の「往復の判定」と「Bの受け取り方」を確認する。往復成立だけでは、人手なしの成功を意味しません。</li>
+        </ol>
+        <div class="copybox"><pre id="probePrompt"></pre><button id="copyProbePrompt">コピー</button></div>
+      </details>
+      <div class="row wrap">
+        <button id="startProbe" class="primary">試験開始</button>
+        <button id="stopProbe">停止</button>
+        <a class="button" href="/api/probe-report?download=1">結果をJSONで保存</a>
+      </div>
+      <div class="probe-now">
+        <div><span class="muted small">議題</span> <span id="probeTopic">—</span></div>
+        <div><span class="muted small">現在の順番</span> <span id="probeTurn">—</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>結果</h3>
+      <div id="probeResults" class="small"></div>
+    </div>
+    <div class="card">
+      <h2>連結試験（三社）</h2>
+      <p class="muted small">先に3社すべてへ開始時の指示を送り、待機状態（または購読済み）にしてから開始してください。開始後はAIの画面に手を触れず、確認ダイアログが出た場合は記録してください。各発言の受け取り方と、直前のAIの発言を「」で引用しているかを自動で判定します（内容が踏まえられているかは、最後に人が読んで判断してください）。</p>
+      <div class="row wrap">
+        <button id="chain6" class="primary">2巡・6発言で開始</button>
+        <button id="chain9">3巡・9発言で開始</button>
+        <span class="muted small">途中停止の試験: 進行中にAIが処理中のときに「停止」を押す（会議タブまたは下のボタン）</span>
+        <button id="chainStop">停止</button>
+      </div>
+      <div id="chainResults" class="small"></div>
+    </div>
+    <div class="card">
+      <h3>画面で確認した内容の記録</h3>
+      <p class="muted small">AIの自己申告ではなく、各社の画面で見えた内容を書いてください。確認できないことは「不明」と書いてください。</p>
+      <div class="row wrap">
+        <label>対象<select id="obsWho"><option value="claude">Claude</option><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option></select></label>
+      </div>
+      <div class="grid2">
+        <label>利用環境（Web/デスクトップ、プラン）<input data-obs="environment"></label>
+        <label>画面に表示されたモデル名<input data-obs="modelShown"></label>
+        <label>Project の利用（使用/未使用/使えない）<input data-obs="project"></label>
+        <label>Memory（ON/OFF/不明）<input data-obs="memory"></label>
+        <label>必要だった本人操作<textarea data-obs="humanActions" rows="2"></textarea></label>
+        <label>確認ダイアログ（何回・どの操作で）<textarea data-obs="confirmations" rows="2"></textarea></label>
+        <label>待機中の挙動<textarea data-obs="waitBehavior" rows="2"></textarea></label>
+        <label>メモ<textarea data-obs="notes" rows="2"></textarea></label>
+      </div>
+      <button id="saveObs">記録を保存</button>
+    </div>
+    <div class="card">
+      <h3>イベントログ</h3>
+      <div class="row"><button id="refreshLog">更新</button><label class="inline small"><input type="checkbox" id="autoLog" checked> 自動更新</label></div>
+      <pre id="eventLog" class="log"></pre>
+    </div>
+  </section>
+
+  <!-- ======================= 接続設定 ======================= -->
+  <section id="tab-setup" class="tab">
+    <div class="card">
+      <h2>1. 公開URL（トンネル）</h2>
+      <p class="muted">Claude と ChatGPT は各社のサーバーから、このPCの参加者用ポートへ接続します。そのため、インターネットから届く https のURLが必要です。README の手順でトンネルを起動し、表示された https://… を貼り付けてください。議長画面（このページ）は公開されません。</p>
+      <div class="row"><input id="publicUrl" placeholder="https://xxxx.trycloudflare.com"><button id="savePublicUrl" class="primary">保存</button></div>
+    </div>
+    <div id="setupCards"></div>
+    <div class="card">
+      <h3>MCP Events の購読（ChatGPT）</h3>
+      <div id="subs" class="small"></div>
+    </div>
+  </section>
+
+  <!-- ======================= 会議設定 ======================= -->
+  <section id="tab-config" class="tab">
+    <div class="card">
+      <h2>議題・前提</h2>
+      <p class="muted small">変更すると前提の版が上がります。回答中の依頼は「旧前提」扱いになり、自動進行は一時停止します。</p>
+      <label>議題<textarea id="cfgTopic" rows="3"></textarea></label>
+      <label>前提・追加の指示<textarea id="cfgInstructions" rows="3"></textarea></label>
+      <button id="savePremise">保存</button>
+    </div>
+    <div class="card">
+      <h2>役割</h2>
+      <p class="muted small">会議中は役割固定が基本です。変更すると、その参加者の回答中の依頼は旧前提扱いになります。</p>
+      <div id="roleEditors"></div>
+    </div>
+    <div class="card">
+      <h2>発言順・権限</h2>
+      <div id="orderEditor"></div>
+      <button id="saveOrder">発言順を保存</button>
+      <h3>読書き権限</h3>
+      <div id="memberEditor"></div>
+      <button id="saveMembers">権限を保存</button>
+    </div>
+    <div class="card">
+      <h2>進行の設定</h2>
+      <div class="row wrap">
+        <label>1回の依頼の期限（秒）<input id="cfgTimeout" type="number" min="30" max="3600"></label>
+        <label>通知までの猶予（秒）<input id="cfgGrace" type="number" min="0" max="600"></label>
+        <label>分量の目安<input id="cfgLength"></label>
+      </div>
+      <button id="saveSettings">保存</button>
+    </div>
+  </section>
+
+  <!-- ======================= 記録・出力 ======================= -->
+  <section id="tab-record" class="tab">
+    <div class="card">
+      <h2>議事録の出力</h2>
+      <p class="muted">発言は原文のまま保存されています（要約は別欄）。</p>
+      <div class="row"><a class="button" href="/api/export.md">Markdown で保存</a><a class="button" href="/api/export.json">JSON で保存</a></div>
+    </div>
+    <div class="card">
+      <h2>仮説の記録</h2>
+      <div id="hypList"></div>
+      <h3>追加・編集</h3>
+      <input type="hidden" id="hypId">
+      <label>見出し<input id="hypTitle"></label>
+      <label>出典の発言番号（カンマ区切り）<input id="hypSources" placeholder="例: 3, 5"></label>
+      <div class="grid2">
+        <label>既存理論との違い<textarea id="hypDiff" rows="2"></textarea></label>
+        <label>固有の予測<textarea id="hypPred" rows="2"></textarea></label>
+        <label>反証条件<textarea id="hypFals" rows="2"></textarea></label>
+        <label>必要な観測・実験<textarea id="hypObs" rows="2"></textarea></label>
+      </div>
+      <label>状態<select id="hypStatus"><option>検討中</option><option>検証待ち</option><option>支持</option><option>棄却</option><option>対立仮説として保持</option></select></label>
+      <div class="row"><button id="saveHyp" class="primary">保存</button><button id="clearHyp">クリア</button></div>
+      <p class="muted small">参加者の一致は、正しさや新規性の証明として扱わないでください。</p>
+    </div>
+  </section>
+</main>
+<div id="toast" class="toast hidden"></div>
+<script src="/app.js"></script>
+</body>
+</html>
