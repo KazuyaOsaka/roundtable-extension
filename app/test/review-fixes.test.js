@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import https from "node:https";
+import { lookup } from "node:dns/promises";
 import { execFileSync } from "node:child_process";
 import { makeRt, reload, newMeeting, answer, tmpDir } from "./helpers.js";
 import { EventHub, safePost } from "../src/mcp/events.js";
@@ -44,7 +45,13 @@ test("safePost reaches a real HTTPS endpoint (lookup callback shape on Node 20+)
       res.end("ok");
     });
   });
-  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  // Bind the address used by this machine's localhost resolver. Do not
+  // accidentally test IPv4-only listening against an IPv6-first hostname.
+  const [{ address }] = await lookup("localhost", { all: true, verbatim: true });
+  await new Promise((resolve, reject) => {
+    srv.once("error", reject);
+    srv.listen(0, address, resolve);
+  });
   try {
     const url = `https://localhost:${srv.address().port}/cb`;
     const r = await safePost(url, { "content-type": "application/json", "webhook-id": "evt_1" }, '{"a":1}', { allowPrivate: true, ca: cert });

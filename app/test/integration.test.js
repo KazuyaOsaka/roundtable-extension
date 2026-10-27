@@ -78,7 +78,8 @@ test("three routes together: 6 then 9 utterances with no human action between tu
     assert.equal(ev.received.length, 2, "ChatGPT woken twice by MCP Events");
     const chain = app.rt.chainReport();
     assert.equal(chain.answered, 6);
-    assert.equal(chain.automaticAnswered, 6, "every turn reached the AI without a person");
+    assert.equal(chain.routeObservedAnswered, 6, "every simulated turn has an observed route");
+    assert.equal(chain.automaticAnswered, null, "transport logs cannot prove provider approval behavior");
     assert.deepEqual(chain.rows.map((r) => r.wakeCode), ["web", "events", "wait", "web", "events", "wait"]);
     assert.equal(chain.quotedPrevious, 5, "every answer after the first quotes the previous AI");
     await Promise.all(ev.runs);
@@ -128,7 +129,11 @@ test("probe via each wake route is classified correctly", async () => {
     assert.match(by.chatgpt.wakeRoute, /MCP Events/);
     assert.match(by.gemini.wakeRoute, /参加者ページ/);
     for (const r of reps) assert.ok(r.waitedSec >= 1, "B came after the configured wait");
-    for (const r of reps) assert.ok(r.passedAutomatically);
+    for (const r of reps) {
+      assert.ok(r.roundTripPassed);
+      assert.equal(r.passedAutomatically, null);
+      assert.equal(r.autonomy.status, "unverified");
+    }
     assert.deepEqual(by.claude.wakeSetting, modes.claude);
     panel.stopped = ge.stopped = true;
     await chair("end");

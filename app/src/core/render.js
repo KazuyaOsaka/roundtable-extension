@@ -37,7 +37,7 @@ export function fenceMessage(m, msg) {
   ].join("\n");
 }
 
-export function renderTurn(m, req) {
+export function renderTurn(m, req, { replyVia = "mcp" } = {}) {
   const p = req.participant;
   const role = m.roles[p];
   const lines = [];
@@ -72,8 +72,10 @@ export function renderTurn(m, req) {
   if (m.settings.lengthHint) lines.push(`（分量の目安: ${m.settings.lengthHint}）`);
   lines.push(
     "",
-    `■ 回答方法: post_message ツールを request_id="${req.id}" で1回だけ呼び、本文を text に入れてください。` +
-      "回答できない場合（利用上限など）は report_problem を呼んでください。",
+    replyVia === "web"
+      ? `■ 回答方法: 参加者ページで依頼 ${req.id} の回答欄に本文を入力し、「投稿する」を1回だけ押してください。回答できない場合（利用上限など）は投稿せず、議長に知らせてください。`
+      : `■ 回答方法: post_message ツールを request_id="${req.id}" で1回だけ呼び、本文を text に入れてください。` +
+        "回答できない場合（利用上限など）は report_problem を呼んでください。",
   );
   return lines.join("\n");
 }

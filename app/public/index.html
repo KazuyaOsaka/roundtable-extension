@@ -88,7 +88,7 @@
   <section id="tab-probe" class="tab">
     <div class="card">
       <h2>接続試験（各社単独）</h2>
-      <p class="muted">依頼A → 回答A → 待機 → 依頼B → 回答B を自動で行い、依頼Bの受け取り方（タスク内で待機していたか、終了後に再起動されたか）を記録します。会議が必要です（会議タブで作成）。試験中は試験対象以外への依頼は出ません。</p>
+      <p class="muted">依頼A → 回答A → 待機 → 依頼B → 回答B の往復と、依頼Bの受取経路を記録します。人手なしで再起動・投稿できたかは各社画面で確認し、承認や手動再開の回数を残してください。会議が必要です（会議タブで作成）。試験中は試験対象以外への依頼は出ません。</p>
       <div class="row wrap">
         <label>対象<select id="probeWho"><option value="claude">Claude</option><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option></select></label>
         <label>依頼Bの受け取り方<select id="probeMode">
@@ -103,7 +103,7 @@
         <ol class="steps small">
           <li>下の指示をコピーし、対象のAIの新しいチャット（ChatGPT は Work チャット）に貼って送信する。パネル方式なら、パネルが表示されたことを確認する。</li>
           <li>AIが待機に入った（または応答を終えた）ことを確認してから「試験開始」を押す。以後はAIの画面に手を触れない（確認ダイアログが出たら、承認した回数を下の記録欄に書く）。</li>
-          <li>結果表の「判定」と「Bの受け取り方」を確認する。</li>
+          <li>結果表の「往復の判定」と「Bの受け取り方」を確認する。往復成立だけでは、人手なしの成功を意味しません。</li>
         </ol>
         <div class="copybox"><pre id="probePrompt"></pre><button id="copyProbePrompt">コピー</button></div>
       </details>

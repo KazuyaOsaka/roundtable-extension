@@ -82,43 +82,67 @@ export function isPublicAddress(addr) {
   return false;
 }
 
-// POST to an https URL after resolving and validating the address, pinning
-// the connection to that address (no DNS rebinding) and never following
+// POST to an https URL after resolving and validating every address, pinning
+// connections to that set (no DNS rebinding) and never following
 // redirects. Returns { status, body }.
 export async function safePost(url, headers, body, { timeoutMs = 10000, allowPrivate = false, ca } = {}) {
   const u = new URL(url);
   if (u.protocol !== "https:") throw new EventsError(-32015, "callback must be https", { reason: "insecure_url" });
-  const addrs = await dns.lookup(u.hostname, { all: true, verbatim: true });
-  const ok = addrs.find((a) => allowPrivate || isPublicAddress(a.address));
-  if (!ok || (!allowPrivate && addrs.some((a) => !isPublicAddress(a.address))))
-    throw new EventsError(-32015, "callback resolves to a non-public address", { reason: "private_address" });
+  const hostname = u.hostname.replace(/^\[|\]$/g, "");
   return new Promise((resolve, reject) => {
-    const req = https.request(
-      {
-        method: "POST",
-        hostname: u.hostname,
-        servername: u.hostname,
-        port: u.port || 443,
-        path: u.pathname + u.search,
-        headers: { ...headers, "content-length": Buffer.byteLength(body) },
-        // Node calls lookup with { all: true } (happy-eyeballs) and then
-        // expects an array; answer in whichever shape was asked for.
-        lookup: (_h, o, cb) => (o && o.all ? cb(null, [{ address: ok.address, family: ok.family }]) : cb(null, ok.address, ok.family)),
-        timeout: timeoutMs,
-        ...(ca ? { ca } : {}),
-      },
-      (res) => {
-        let data = "";
-        res.setEncoding("utf8");
-        res.on("data", (c) => {
-          if (data.length < 64 * 1024) data += c;
-        });
-        res.on("end", () => resolve({ status: res.statusCode, body: data }));
-      },
-    );
-    req.on("timeout", () => req.destroy(new Error("timeout")));
-    req.on("error", reject);
-    req.end(body);
+    let req;
+    let settled = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      if (error) reject(error);
+      else resolve(value);
+    };
+    // An absolute deadline also bounds DNS and a callback which keeps the
+    // socket alive by slowly streaming bytes. A socket timeout alone does not.
+    const deadline = setTimeout(() => {
+      const error = Object.assign(new Error("callback timeout"), { code: "ETIMEDOUT" });
+      finish(error);
+      req?.destroy(error);
+    }, timeoutMs);
+    const connect = async () => {
+      const addrs = await dns.lookup(hostname, { all: true, verbatim: true });
+      if (settled) return;
+      if (!addrs.length || (!allowPrivate && addrs.some((a) => !isPublicAddress(a.address))))
+        throw new EventsError(-32015, "callback resolves to a non-public address", { reason: "private_address" });
+      req = https.request(
+        {
+          method: "POST",
+          hostname,
+          ...(!net.isIP(hostname) ? { servername: hostname } : {}),
+          port: u.port || 443,
+          path: u.pathname + u.search,
+          headers: { ...headers, "content-length": Buffer.byteLength(body) },
+          // Pin every vetted address. Happy Eyeballs may try another TCP
+          // address before connecting; it never replays an HTTP request.
+          autoSelectFamily: true,
+          lookup: (_h, o, cb) => (o && o.all ? cb(null, addrs) : cb(null, addrs[0].address, addrs[0].family)),
+          ...(ca ? { ca } : {}),
+        },
+        (res) => {
+          let data = "";
+          res.setEncoding("utf8");
+          res.on("data", (c) => {
+            if (data.length < 64 * 1024) data += c.slice(0, 64 * 1024 - data.length);
+          });
+          res.on("error", (error) => finish(error));
+          res.on("aborted", () => finish(Object.assign(new Error("callback response aborted"), { code: "ECONNRESET" })));
+          res.on("close", () => {
+            if (!res.complete) finish(Object.assign(new Error("callback response closed before completion"), { code: "ECONNRESET" }));
+          });
+          res.on("end", () => finish(null, { status: res.statusCode, body: data }));
+        },
+      );
+      req.on("error", (error) => finish(error));
+      req.end(body);
+    };
+    connect().catch((error) => finish(error));
   });
 }
 
@@ -132,7 +156,8 @@ export class EventHub {
     this.graceMs = graceMs;
     this.log = log;
     this.subs = new Map(Object.entries(store.readJson("subscriptions.json", {})));
-    this.verified = new Map(); // `${participant} ${url}` -> verifiedAt
+    this.verified = new Map(); // participant + URL + signing-key hash -> verifiedAt
+    this.credentialVersions = new Map();
     this.timers = new Set();
     // Requests still waiting from before a restart get their wake-up now
     // (push() itself refuses if one was already sent or it was picked up).
@@ -154,6 +179,16 @@ export class EventHub {
 
   _save() {
     this.store.writeJson("subscriptions.json", Object.fromEntries(this.subs), { mode: 0o600 });
+  }
+
+  // Rotating a participant URL also revokes callbacks registered with it.
+  // The version check prevents an older verification from restoring them
+  // after this synchronous revocation has completed.
+  revokeParticipant(participant) {
+    this.credentialVersions.set(participant, (this.credentialVersions.get(participant) || 0) + 1);
+    for (const [id, sub] of this.subs) if (sub.participant === participant) this.subs.delete(id);
+    for (const key of this.verified.keys()) if (key.startsWith(`${participant} `)) this.verified.delete(key);
+    this._save();
   }
 
   list() {
@@ -180,6 +215,7 @@ export class EventHub {
   }
 
   async subscribe(participant, params) {
+    const credentialVersion = this.credentialVersions.get(participant) || 0;
     const { name, arguments: args = {}, delivery, ttlMs } = params || {};
     const def = EVENT_DEFINITIONS.find((e) => e.name === name);
     if (!def) throw new EventsError(-32602, `unknown event ${name}`);
@@ -207,6 +243,8 @@ export class EventHub {
     const cached = this.verified.get(vkey);
     if (!cached || this.now() - cached > VERIFY_CACHE_MS) {
       await this._verify(id, url.href, secret);
+      if (credentialVersion !== (this.credentialVersions.get(participant) || 0))
+        throw new EventsError(-32000, "participant credentials were revoked; reconnect before subscribing");
       this.verified.set(vkey, this.now());
     }
     let ttl = ttlMs == null ? DEFAULT_TTL_MS : Number(ttlMs);
@@ -322,7 +360,7 @@ export class EventHub {
       detail = `HTTP ${res.status}`;
       if (res.status >= 200 && res.status < 300) result = "sent";
       else if (res.status === 410) {
-        this.subs.delete(sub.id);
+        if (this.subs.get(sub.id) === sub) this.subs.delete(sub.id);
         result = "failed";
         detail += "（購読は取り消されました）";
       } else if (res.status >= 400 && res.status < 500 && res.status !== 429) result = "failed";

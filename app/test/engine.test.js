@@ -333,7 +333,8 @@ test("probe: A, wait, B; report classifies the wake route", () => {
     rt.post("claude", { requestId: b.request.id, text: `答えは6です ${codeB}` });
     const [rep] = rt.probeReport();
     assert.equal(rep.passed, true);
-    assert.match(rep.wakeRoute, /稼働中タスク内の待機/);
+    assert.match(rep.wakeRoute, /wait_for_my_turn/);
+    assert.equal(rep.passedAutomatically, null);
     assert.ok(rep.waitedSec >= 180);
   });
 });
@@ -387,7 +388,9 @@ test("reports: a turn picked up without any wake record is not counted as automa
   rt.post("claude", { requestId: d.request.id, text: "「都市部では限定的」という指摘に同意しつつ補足します" });
   const c = rt.chainReport();
   assert.deepEqual(c.rows.map((r) => r.wakeCode), ["unknown", "unknown", "wait"]);
-  assert.equal(c.automaticAnswered, 1);
+  assert.equal(c.automaticAnswered, null);
+  assert.equal(c.routeObservedAnswered, 1);
+  assert.equal(c.autonomy.status, "unverified");
   assert.equal(c.quotedPrevious, 2);
   assert.equal(quoteCheck("「存在しない引用文です」", "別の文章").matched, 0);
 });

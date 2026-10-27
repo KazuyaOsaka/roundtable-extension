@@ -43,12 +43,13 @@ try {
   await page.selectOption("#probeMode", "events");
   await page.selectOption("#probeDelay", "0");
   await page.click("#startProbe");
-  await page.waitForFunction(() => /成立|不成立/.test(document.querySelector("#probeResults").textContent), null, { timeout: 30000 });
-  out.probe = /成立/.test(await page.textContent("#probeResults")) && /MCP Events/.test(await page.textContent("#probeResults"));
+  await page.waitForSelector('#probeResults [data-probe-result="passed"], #probeResults [data-probe-result="failed"]', { timeout: 30000 });
+  out.probe = (await page.locator('#probeResults [data-probe-result="passed"]').count()) === 1 && /MCP Events/.test(await page.textContent("#probeResults"));
+  out.autonomyUnverified = /未確認（各社画面で記録）/.test(await page.textContent("#probeResults"));
   await shot("probe");
   await page.click("#chain6");
   await page.waitForFunction(() => /完了/.test(document.querySelector("#chainResults").textContent), null, { timeout: 60000 });
-  out.chain6 = /人の操作なしで届いた回答 6/.test(await page.textContent("#chainResults"));
+  out.chain6 = /受取経路を記録できた回答 6/.test(await page.textContent("#chainResults")) && /人手なしの確認：未確認/.test(await page.textContent("#chainResults"));
   await page.click("#chain9");
   await page.waitForFunction(() => /受信済み/.test(document.querySelector("#probeTurn").textContent), null, { timeout: 20000 });
   await page.click("#chainStop");
@@ -70,7 +71,7 @@ try {
   await browser.close();
   await demo.close();
 }
-const ok = !out.failure && !errors.length && ["askAll", "interruptPaused", "autoCompleted", "probe", "chain6", "staleShown", "reloadRestores", "noHorizontalOverflow"].every((k) => out[k]);
+const ok = !out.failure && !errors.length && ["askAll", "interruptPaused", "autoCompleted", "probe", "autonomyUnverified", "chain6", "staleShown", "reloadRestores", "noHorizontalOverflow"].every((k) => out[k]);
 console.log(JSON.stringify(out, null, 2));
 console.log(ok ? "UI CHECK: OK" : "UI CHECK: FAILED");
 process.exit(ok ? 0 : 1);

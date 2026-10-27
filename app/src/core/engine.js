@@ -18,6 +18,7 @@ import { probeReport, chainReport } from "./report.js";
 import {
   AI_IDS,
   CHAIR_ID,
+  CHARTER,
   DEFAULT_ORDER,
   DEFAULT_ROLES,
   PHASE_PRESETS,
@@ -356,16 +357,14 @@ export class Roundtable extends EventEmitter {
     const req = m.requests[requestId];
     if (!req) throw new CommandError("not_found", "依頼が見つかりません");
     if (req.status === "answered" || req.status === "skipped") throw new CommandError("bad_state", "この依頼は既に回答済み・スキップ済みです");
+    const latest = m.requestOrder.map((id) => m.requests[id]).findLast(
+      (r) => r.runId === req.runId && r.stepIndex === req.stepIndex && r.participant === req.participant,
+    );
+    if (latest.id !== req.id) throw new CommandError("bad_state", "この依頼は再依頼済みです。最新の依頼を確認してください");
     const run = m.runs[req.runId];
     if (req.status === OPEN) this._closeRequest(m, req, "skipped", "議長がスキップ");
     else this._emit(m, "request_closed", CHAIR_ID, { id: req.id, status: "skipped", reason: `議長がスキップ（${req.status} の後）` });
-    // Move the run past this turn only if it is the turn the run is on, so a
-    // stale or repeated click cannot skip the next participant.
-    if (run && run.id === m.runId && req.stepIndex === run.stepIndex) {
-      const step = run.steps[run.stepIndex];
-      const isCurrent = step && (step.parallel ? !run.stepDone.includes(req.participant) : step.participants[run.stepPos] === req.participant);
-      if (isCurrent) this._markStepDone(m, run, req.participant);
-    }
+    // The skipped closure also commits this turn's completion in the reducer.
     if (run && run.state === "running") this._advance(m);
     return m;
   }
@@ -453,9 +452,7 @@ export class Roundtable extends EventEmitter {
   }
 
   _stopRun(m, run, reason) {
-    for (const req of this._openRequests(m)) {
-      if (req.runId === run.id) this._closeRequest(m, req, "cancelled", reason);
-    }
+    // Stopping and cancelling every in-flight request share one commit point.
     this._emit(m, "run_state", CHAIR_ID, { runId: run.id, state: "stopped", reason });
   }
 
@@ -478,17 +475,6 @@ export class Roundtable extends EventEmitter {
 
   _closeRequest(m, req, status, reason, messageId) {
     this._emit(m, "request_closed", "system", { id: req.id, status, reason, messageId });
-  }
-
-  _markStepDone(m, run, participant) {
-    const step = run.steps[run.stepIndex];
-    if (!step) return;
-    if (step.parallel) {
-      const done = Array.from(new Set([...run.stepDone, participant]));
-      this._emit(m, "run_progress", "system", { runId: run.id, stepDone: done });
-    } else {
-      this._emit(m, "run_progress", "system", { runId: run.id, stepPos: run.stepPos + 1 });
-    }
   }
 
   _complete(m, run, reason) {
@@ -613,19 +599,22 @@ export class Roundtable extends EventEmitter {
   }
 
   // ---------------------------------------------------------------- periodic
+  // Enforce the deadline at command boundaries too: the periodic timer may
+  // not have run yet when a post, delivery, or wake-up arrives.
+  _expireRequests(m, now = this.now()) {
+    if (!m || m.status !== "open") return;
+    for (const req of this._openRequests(m)) {
+      if (now >= req.deadlineAt) {
+        this._closeRequest(m, req, "expired", `${Math.round(m.settings.requestTimeoutSec / 60)}分以内に回答がありませんでした`);
+      }
+    }
+  }
+
   tick() {
     const m = this.active;
     if (!m || m.status !== "open") return;
     const now = this.now();
-    for (const req of this._openRequests(m)) {
-      if (now >= req.deadlineAt) {
-        this._closeRequest(m, req, "expired", `${Math.round(m.settings.requestTimeoutSec / 60)}分以内に回答がありませんでした`);
-        const run = m.runs[req.runId];
-        if (run && run.state === "running" && run.id === m.runId) {
-          this._emit(m, "run_state", "system", { runId: run.id, state: "paused", reason: `${DISPLAY_NAMES[req.participant]} が期限切れ` });
-        }
-      }
-    }
+    this._expireRequests(m, now);
     const run = this._run(m);
     if (run && run.state === "running") {
       if (!run.timeUp && run.limits.maxMinutes && now - run.startedAt >= run.limits.maxMinutes * 60000) {
@@ -659,6 +648,7 @@ export class Roundtable extends EventEmitter {
     if (!m) return { status: "no_meeting" };
     this._member(m, participant, "read");
     if (m.status !== "open") return { status: "meeting_ended", meeting_id: m.id };
+    this._expireRequests(m);
     const req = this._nextOpenFor(m, participant);
     if (!req) return { status: "not_your_turn", meeting_id: m.id };
     const p = m.participants[participant];
@@ -746,6 +736,7 @@ export class Roundtable extends EventEmitter {
     }
     const body = text.trim();
     const hyps = Array.isArray(hypotheses) ? hypotheses.slice(0, 5).map(cleanHypothesis) : [];
+    this._expireRequests(m);
 
     if (req.status === "answered") {
       const orig = m.messages.find((x) => x.id === req.messageId);
@@ -794,6 +785,9 @@ export class Roundtable extends EventEmitter {
       };
     }
 
+    // One durable event commits the message, closes its request, and marks
+    // this turn done. The reducer also applies this atomically to legacy
+    // message_posted events if a crash cut off their follow-up events.
     const msg = this._postMessage(m, {
       speaker: participant,
       text: body,
@@ -806,9 +800,6 @@ export class Roundtable extends EventEmitter {
       phase: req.phase,
       hypotheses: hyps,
     });
-    this._closeRequest(m, req, "answered", null, msg.id);
-    const run = m.runs[req.runId];
-    if (run && run.id === m.runId && req.stepIndex === run.stepIndex) this._markStepDone(m, run, participant);
     this._advance(m);
     return { status: "accepted", message_id: msg.id, seq: msg.seq, next: this._nextHint(m, participant) };
   }
@@ -845,10 +836,6 @@ export class Roundtable extends EventEmitter {
     const req = requestId ? m.requests[requestId] : this._nextOpenFor(m, participant);
     if (req && req.participant === participant && req.status === OPEN) {
       this._closeRequest(m, req, "failed", `${k}: ${String(detail || "").slice(0, 200)}`);
-      const run = m.runs[req.runId];
-      if (run && run.state === "running" && run.id === m.runId) {
-        this._emit(m, "run_state", "system", { runId: run.id, state: "paused", reason: `${DISPLAY_NAMES[participant]} が問題を報告（${k}）` });
-      }
     }
     return { status: "recorded" };
   }
@@ -892,6 +879,7 @@ export class Roundtable extends EventEmitter {
       topic: m.premise.topic,
       instructions: m.premise.instructions,
       premise_version: m.premise.version,
+      charter: [...CHARTER],
       your_role: r,
       order: m.order.map((id) => DISPLAY_NAMES[id]),
       recent: recent.map((x) => fenceMessage(m, x)).join("\n"),
@@ -907,6 +895,7 @@ export class Roundtable extends EventEmitter {
     const m = this.active;
     if (!m) return { status: "no_meeting" };
     this._member(m, participant, "read");
+    this._expireRequests(m);
     const req = m.status === "open" ? this._nextOpenFor(m, participant) : null;
     const wake = m.settings.wake[participant];
     const canTrigger =
@@ -934,6 +923,7 @@ export class Roundtable extends EventEmitter {
   claimTrigger(participant, { requestId, instanceId, manual = false }) {
     const m = this.requireOpen();
     this._member(m, participant, "write");
+    this._expireRequests(m);
     const req = m.requests[requestId];
     if (!req || req.participant !== participant) throw new CommandError("forbidden", "この依頼はあなた宛てではありません");
     if (req.status !== OPEN) return { granted: false, reason: "request_closed" };
@@ -963,6 +953,7 @@ export class Roundtable extends EventEmitter {
   claimPushWake(participant, requestId, ref) {
     const m = this.active;
     if (!m || m.status !== "open") return false;
+    this._expireRequests(m);
     const req = m.requests[requestId];
     if (!req || req.participant !== participant || req.status !== OPEN || req.deliveries > 0) return false;
     if (!m.settings.wake[participant].events) return false;

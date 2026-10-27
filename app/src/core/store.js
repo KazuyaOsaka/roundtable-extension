@@ -13,11 +13,26 @@
 import fs from "node:fs";
 import path from "node:path";
 
+// writeSync may successfully write fewer bytes than requested (for example
+// when a device is nearly full). A string write's return value is bytes, not
+// JS characters, so keep a Buffer and advance by the actual byte count.
+function writeAll(fd, bytes) {
+  let offset = 0;
+  while (offset < bytes.length) {
+    const written = fs.writeSync(fd, bytes, offset, bytes.length - offset, null);
+    if (!Number.isInteger(written) || written <= 0 || written > bytes.length - offset) {
+      throw new Error("event log write made no valid progress");
+    }
+    offset += written;
+  }
+}
+
 export class EventStore {
   constructor(dir) {
     this.dir = dir;
     fs.mkdirSync(path.join(dir, "meetings"), { recursive: true });
     this.fds = new Map();
+    this.appendFailure = null;
   }
 
   meetingFile(meetingId) {
@@ -63,23 +78,47 @@ export class EventStore {
   }
 
   append(meetingId, event) {
+    if (this.appendFailure) {
+      throw new Error("event store is unavailable after a write failure; restart after checking storage", { cause: this.appendFailure });
+    }
     let fd = this.fds.get(meetingId);
-    if (fd === undefined) {
+    let startSize = null;
+    try {
       const file = this.meetingFile(meetingId);
-      fd = fs.openSync(file, "a");
-      this.fds.set(meetingId, fd);
-      // Never glue a new event onto a line that lacks its newline.
-      const size = fs.fstatSync(fd).size;
-      if (size > 0) {
+      if (fd === undefined) {
+        fd = fs.openSync(file, "a");
+        this.fds.set(meetingId, fd);
+      }
+      startSize = fs.fstatSync(fd).size;
+      let prefix = "";
+      // Never glue a new event onto a complete line without its newline.
+      if (startSize > 0) {
         const last = Buffer.alloc(1);
         const rfd = fs.openSync(file, "r");
-        fs.readSync(rfd, last, 0, 1, size - 1);
-        fs.closeSync(rfd);
-        if (last[0] !== 0x0a) fs.writeSync(fd, "\n");
+        try {
+          fs.readSync(rfd, last, 0, 1, startSize - 1);
+        } finally {
+          fs.closeSync(rfd);
+        }
+        if (last[0] !== 0x0a) prefix = "\n";
       }
+      writeAll(fd, Buffer.from(prefix + JSON.stringify(event) + "\n", "utf8"));
+      fs.fsyncSync(fd);
+    } catch (error) {
+      // The command must not be acknowledged or followed by another append
+      // after an incomplete write. Roll back this append where possible;
+      // otherwise boot's torn-tail repair can recover it after a restart.
+      this.appendFailure = error;
+      if (fd !== undefined && startSize !== null) {
+        try {
+          fs.ftruncateSync(fd, startSize);
+          fs.fsyncSync(fd);
+        } catch (rollbackError) {
+          error.rollbackError = rollbackError;
+        }
+      }
+      throw error;
     }
-    fs.writeSync(fd, JSON.stringify(event) + "\n");
-    fs.fsyncSync(fd);
   }
 
   readJson(name, fallback) {

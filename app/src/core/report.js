@@ -3,18 +3,31 @@
 
 import { DISPLAY_NAMES } from "./presets.js";
 
-// How did the AI receive this request? `automatic` is true only for routes
-// where no person acted between turns (as far as the server can observe).
+// What delivery route did the server observe? A wait call, browser request,
+// or successful notification does not prove that no person resumed the AI or
+// approved its action. `automatic` is therefore unknown (null), except when
+// the server positively observed a manual wake-up (false).
 export function classifyWake(req) {
   if (!req || !req.firstDeliveredAt) return null;
   const before = req.triggers.filter((t) => t.at <= req.firstDeliveredAt);
   const last = before[before.length - 1];
-  if (req.deliveredVia === "wait") return { code: "wait", automatic: true, label: "稼働中タスク内の待機（wait_for_my_turn）" };
-  if (req.deliveredVia === "web") return { code: "web", automatic: true, label: "参加者ページ（ブラウザ経由。送信確認の有無は画面で記録）" };
-  if (last?.manual) return { code: "manual", automatic: false, label: "人の操作（パネルの手動通知ボタン）" };
-  if (last?.channel === "mcp_events") return { code: "events", automatic: true, label: "処理終了後のイベント再起動（MCP Events → get_my_turn）" };
-  if (last?.channel === "panel") return { code: "panel", automatic: true, label: "処理終了後のイベント再起動（MCP App パネル → get_my_turn）" };
-  return { code: "unknown", automatic: false, label: "通知記録なしで get_my_turn（開始時の指示か人の入力。経路不明）" };
+  if (before.some((t) => t.manual)) return { code: "manual", automatic: false, label: "手動通知の操作あり（パネルの手動通知ボタン）" };
+  if (req.deliveredVia === "wait") return { code: "wait", automatic: null, label: "wait_for_my_turn で取得（手動再開・承認の有無は未確認）" };
+  if (req.deliveredVia === "web") return { code: "web", automatic: null, label: "参加者ページで取得（操作者・送信承認の有無は未確認）" };
+  if (last?.result === "sent" && last.channel === "mcp_events") return { code: "events", automatic: null, label: "MCP Events 通知送信後に取得（自動再起動は未確認）" };
+  if (last?.result === "sent" && last.channel === "panel") return { code: "panel", automatic: null, label: "MCP App パネル通知送信後に取得（自動再起動は未確認）" };
+  const detail = last ? `通知結果: ${last.result || "未確認"}` : "通知記録なし";
+  return { code: "unknown", automatic: null, label: `${detail}で get_my_turn（起動経路は未確認）` };
+}
+
+function autonomyFor(requests) {
+  const assisted = requests.some((req) => req.triggers.some((t) => t.manual));
+  return {
+    status: assisted ? "assisted" : "unverified",
+    reason: assisted
+      ? "試験中の手動通知を記録しています。"
+      : "サーバーの配送記録だけでは、各社画面での手動再開や承認の有無を確認できません。",
+  };
 }
 
 const norm = (s) => String(s || "").replace(/\s+/g, "");
@@ -55,6 +68,8 @@ export function probeReport(m) {
     const ra = row(a, run.probe.codeA);
     const rb = row(b, run.probe.codeB);
     const wake = classifyWake(b);
+    const roundTripPassed = !!(ra?.codeFound && ra.status === "answered" && rb?.codeFound && rb.status === "answered");
+    const autonomy = autonomyFor(reqs);
     return {
       runId: run.id,
       participant: run.probe.participant,
@@ -68,8 +83,13 @@ export function probeReport(m) {
       waitedSec: ra?.answeredAt && rb?.firstDeliveredAt ? Math.round((rb.firstDeliveredAt - ra.answeredAt) / 1000) : null,
       wakeRoute: wake?.label || null,
       wakeCode: wake?.code || null,
-      passed: !!(ra?.codeFound && rb?.codeFound && rb.status === "answered"),
-      passedAutomatically: !!(ra?.codeFound && rb?.codeFound && rb.status === "answered" && wake?.automatic),
+      passed: roundTripPassed,
+      roundTripPassed,
+      // Compatibility field: never promote transport observations to proof
+      // of an unattended run. Run-scoped real-service evidence is not yet
+      // recorded by this application.
+      passedAutomatically: autonomy.status === "assisted" ? false : null,
+      autonomy,
     };
   });
 }
@@ -95,7 +115,7 @@ export function chainReport(m, runId) {
       seq: msg?.seq ?? null,
       wakeCode: wake?.code || null,
       wakeRoute: wake?.label || null,
-      automatic: !!wake?.automatic,
+      automatic: wake?.automatic ?? null,
       deliveries: req.deliveries,
       prevSeq: prev?.seq ?? null,
       prevSpeaker: prev?.speaker ?? null,
@@ -112,7 +132,10 @@ export function chainReport(m, runId) {
     startedAt: run.startedAt,
     endedAt: run.endedAt,
     answered: answered.length,
-    automaticAnswered: answered.filter((r) => r.automatic).length,
+    automaticAnswered: null,
+    routeObservedAnswered: answered.filter((r) => r.wakeCode && r.wakeCode !== "unknown").length,
+    assistedAnswered: answered.filter((r) => r.automatic === false).length,
+    autonomy: autonomyFor(reqs),
     quotedPrevious: answered.filter((r) => r.quote && r.quote.matched > 0).length,
     rows,
   };

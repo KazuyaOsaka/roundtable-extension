@@ -3,7 +3,7 @@
 // It must not read the clock or any external state, so that replaying the
 // event log always rebuilds exactly the same meeting.
 
-import { AI_IDS } from "./presets.js";
+import { AI_IDS, DISPLAY_NAMES } from "./presets.js";
 import { visibleMessages } from "./render.js";
 
 export function initialMeeting(ev) {
@@ -48,6 +48,21 @@ export function initialMeeting(ev) {
 
 function notice(m, ev, text) {
   m.notices.push({ at: ev.at, n: ev.n, type: ev.type, actor: ev.actor, text });
+}
+
+// Accepted answers and explicit skips complete the same logical slot. An old
+// request must not finish its newer replacement, even while replaying a log.
+function completeCurrentTurn(m, req) {
+  const run = m.runs[req.runId];
+  if (!run || run.id !== m.runId || req.stepIndex !== run.stepIndex) return;
+  const latestId = m.requestOrder.findLast((id) => {
+    const r = m.requests[id];
+    return r.runId === req.runId && r.stepIndex === req.stepIndex && r.participant === req.participant;
+  });
+  if (latestId !== req.id) return;
+  const step = run.steps[run.stepIndex];
+  if (step?.parallel) run.stepDone = [...new Set([...run.stepDone, req.participant])];
+  else if (step?.participants[run.stepPos] === req.participant) run.stepPos += 1;
 }
 
 export function reduce(m, ev) {
@@ -109,7 +124,19 @@ export function reduce(m, ev) {
       if (d.status === "accepted" && d.speaker !== "chair") {
         m.participants[d.speaker].error = null;
         const run = d.runId ? m.runs[d.runId] : null;
-        if (run) run.accepted += 1;
+        if (run) {
+          run.accepted += 1;
+          const req = m.requests[d.requestId];
+          if (req && req.runId === run.id && req.participant === d.speaker) {
+            // Acceptance is the commit point for the whole logical turn.
+            // Legacy logs may also contain request_closed/run_progress;
+            // those set the same absolute values, so remain replayable.
+            req.status = "answered";
+            req.closedAt = ev.at;
+            req.closeReason = null;
+            completeCurrentTurn(m, req);
+          }
+        }
       }
       break;
     }
@@ -190,8 +217,18 @@ export function reduce(m, ev) {
       if (d.messageId) r.messageId = d.messageId;
       if (["expired", "failed"].includes(d.status)) {
         m.participants[r.participant].error = { kind: d.status, detail: d.reason || "", at: ev.at, requestId: r.id };
+        const run = m.runs[r.runId];
+        if (run && run.id === m.runId && run.state === "running") {
+          run.state = "paused";
+          run.reason = d.status === "expired"
+            ? `${DISPLAY_NAMES[r.participant]} が期限切れ`
+            : `${DISPLAY_NAMES[r.participant]} が問題を報告（${d.reason || "failed"}）`;
+        }
       }
-      if (d.status === "skipped" && m.participants[r.participant].error?.requestId === r.id) m.participants[r.participant].error = null;
+      if (d.status === "skipped") {
+        if (m.participants[r.participant].error?.requestId === r.id) m.participants[r.participant].error = null;
+        completeCurrentTurn(m, r);
+      }
       break;
     }
 
@@ -261,6 +298,14 @@ export function reduce(m, ev) {
       run.state = d.state;
       run.reason = d.reason || null;
       if (d.state === "stopped" || d.state === "completed") run.endedAt = ev.at;
+      if (d.state === "stopped") {
+        for (const req of Object.values(m.requests)) {
+          if (req.runId !== run.id || req.status !== "open") continue;
+          req.status = "cancelled";
+          req.closedAt = ev.at;
+          req.closeReason = d.reason || null;
+        }
+      }
       const label = { running: "再開", paused: "一時停止", stopped: "停止", completed: "完了" }[d.state];
       notice(m, ev, `進行を${label}${d.reason ? `（${d.reason}）` : ""}`);
       break;

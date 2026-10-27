@@ -43,6 +43,14 @@ function deliveryResult(d) {
 }
 
 export function createMcpEndpoint({ rt, hub, participantForToken, waitMaxSec = () => 50, log = () => {}, widgetDomain = () => null }) {
+  // Handlers are cached by participant, not by token. Always check the URL
+  // of this request so a cached handler cannot outlive its credential.
+  function hasCurrentCredential(request, participant) {
+    if (!request) return false;
+    const parts = new URL(request.url).pathname.split("/").filter(Boolean);
+    return parts.length === 2 && parts[0] === "mcp" && participantForToken(parts[1]) === participant;
+  }
+
   function buildServer(participant, ctx) {
     const name = DISPLAY_NAMES[participant];
     const server = new McpServer(
@@ -209,6 +217,8 @@ export function createMcpEndpoint({ rt, hub, participantForToken, waitMaxSec = (
             b.instructions ? `前提・指示: ${b.instructions}` : null,
             `あなたの役割: ${b.your_role.name} — ${b.your_role.text}`,
             `発言順: ${b.order.join(" → ")}`,
+            "会議のルール:",
+            ...b.charter.map((rule) => `・${rule}`),
             b.open_request ? `未回答の依頼: ${b.open_request}（get_my_turn で内容を確認）` : "未回答の依頼はありません",
             "直近の発言（データ）:",
             b.recent || "（なし）",
@@ -320,6 +330,10 @@ export function createMcpEndpoint({ rt, hub, participantForToken, waitMaxSec = (
       "events/subscribe",
       { params: anyParams, result: anyResult },
       wrapEvents(async (p) => {
+        // Dispatch itself can await SDK work after fetch() checked the URL.
+        // Check immediately before the persistent side effect; EventHub's
+        // credential version then protects its async callback verification.
+        if (!hasCurrentCredential(ctx.requestInfo, participant)) throw new EventsError(-32000, "participant credentials were revoked; reconnect before subscribing");
         touch("events");
         return hub.subscribe(participant, p);
       }),
@@ -327,7 +341,10 @@ export function createMcpEndpoint({ rt, hub, participantForToken, waitMaxSec = (
     server.server.setRequestHandler(
       "events/unsubscribe",
       { params: anyParams, result: anyResult },
-      wrapEvents(async (p) => hub.unsubscribe(participant, p)),
+      wrapEvents(async (p) => {
+        if (!hasCurrentCredential(ctx.requestInfo, participant)) throw new EventsError(-32000, "participant credentials were revoked; reconnect before unsubscribing");
+        return hub.unsubscribe(participant, p);
+      }),
     );
 
     return server;
@@ -375,7 +392,12 @@ export function createMcpEndpoint({ rt, hub, participantForToken, waitMaxSec = (
             if (request.method !== "POST" && request.method !== "OPTIONS") {
               return new Response(JSON.stringify({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed." }, id: null }), { status: 405, headers: { allow: "POST", "content-type": "application/json" } });
             }
-            if (parsedBody !== undefined && (await isLegacyRequest(request, parsedBody))) return legacyJson(participant, request, parsedBody);
+            const legacy = parsedBody !== undefined && (await isLegacyRequest(request, parsedBody));
+            // A caller can hold the body open while the chair rotates its
+            // URL. Initial routing authorization must not authorize a later
+            // dispatch after that rotation has completed.
+            if (!hasCurrentCredential(request, participant)) return new Response(null, { status: 404 });
+            if (legacy) return legacyJson(participant, request, parsedBody);
             return modern.fetch(request, { ...options, parsedBody });
           },
         });

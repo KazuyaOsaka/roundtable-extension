@@ -91,6 +91,7 @@ export async function startApp({
   let chairServer;
   const rotateToken = (id) => {
     config.tokens[id] = newToken();
+    hub.revokeParticipant(id);
     saveConfig();
   };
   const cHandler = chairRoutes({ rt, hub, store, config, saveConfig, port: () => chairServer.address().port, rotateToken });

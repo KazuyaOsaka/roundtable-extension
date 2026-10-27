@@ -69,6 +69,10 @@ export function chairRoutes({ rt, hub, store, config, saveConfig, port, rotateTo
     const snap = rt.snapshot();
     return {
       ...snap,
+      // The first install has no meeting yet. Keep the UI response shape
+      // stable so connection setup can render before a meeting is created.
+      participants: snap.participants || [],
+      now: snap.now ?? rt.now(),
       setup: setupInfo({ publicUrl: config.publicUrl, tokens: config.tokens, meeting: rt.active }),
       publicUrl: config.publicUrl || "",
       subscriptions: hub.summary(),

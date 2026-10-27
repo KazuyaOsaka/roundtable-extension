@@ -15,7 +15,7 @@ export function startupPrompt(id, wake, { route = "mcp", pageUrl = "" } = {}) {
       `これから Roundtable 会議に参加者「${name}」として参加してください。次のページを開いてください:`,
       pageUrl,
       "",
-      "1. ページに「STATUS: YOUR_TURN」と表示されていたら、表示された依頼を読み、依頼と役割に従って回答を書き、テキスト欄に入力して「投稿する」を押してください。",
+      "1. まずページの「現在の会議概要」で議題・前提・自分の役割を確認してください。新しいチャットで参加し直した場合も省略しないでください。「STATUS: YOUR_TURN」と表示されていたら、表示された依頼を読み、依頼と役割に従って回答を書き、テキスト欄に入力して「投稿する」を押してください。",
       "2. 「STATUS: WAITING」と表示されているときは、20秒ほど待ってからページを再読み込みし、もう一度確認してください。",
       "3. 投稿の後も 2 に戻って確認を続け、「STATUS: MEETING_ENDED」と表示されたら終了してください。",
       "",
@@ -24,6 +24,7 @@ export function startupPrompt(id, wake, { route = "mcp", pageUrl = "" } = {}) {
   }
   const lines = [`これから Roundtable 会議に参加者「${name}」として参加してください（Roundtable のツールを使います）。`];
   let n = 1;
+  lines.push(`${n++}. 最初に必ず get_meeting_brief を1回呼び、現在の議題・前提・自分の役割を確認してください。新しいチャットで参加し直した場合も省略しないでください。`);
   if (wake.events) {
     lines.push(
       `${n++}. Roundtable の turn.assigned イベントを監視してください。イベントが届いたら、payload の request_id を渡して get_my_turn を呼び、返ってきた依頼に従って回答を作り、post_message で1回だけ投稿してください。投稿したらそのイベントへの対応は終わりです。`,

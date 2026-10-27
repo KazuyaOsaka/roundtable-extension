@@ -293,12 +293,13 @@ function refreshProbeResults() {
           el("td", {}, cell(r.B)),
           el("td", {}, r.waitedSec != null ? `${r.waitedSec}秒` : "—"),
           el("td", {}, r.wakeRoute || "—"),
-          el("td", { class: r.passed ? "pass" : r.state === "running" ? "" : "fail" }, r.passed ? "成立" : r.state === "running" ? "実施中" : `不成立（${RUN_LABEL[r.state]}${r.reason ? `: ${r.reason}` : ""}）`),
+          el("td", { class: r.roundTripPassed ? "pass" : r.state === "running" ? "" : "fail", "data-probe-result": r.roundTripPassed ? "passed" : r.state === "running" ? "running" : "failed" }, r.roundTripPassed ? "往復成立" : r.state === "running" ? "実施中" : `不成立（${RUN_LABEL[r.state]}${r.reason ? `: ${r.reason}` : ""}）`),
+          el("td", {}, r.autonomy?.status === "assisted" ? "手動通知あり" : "未確認（各社画面で記録）"),
         );
       });
       $("probeResults").replaceChildren(
         rows.length
-          ? el("table", {}, el("tr", {}, ...["対象", "待機", "依頼A", "依頼B", "A回答→B受信", "Bの受け取り方", "判定"].map((h) => el("th", {}, h))), ...rows.reverse())
+          ? el("table", {}, el("tr", {}, ...["対象", "待機", "依頼A", "依頼B", "A回答→B受信", "Bの受け取り方", "往復の判定", "人手なしの確認"].map((h) => el("th", {}, h))), ...rows.reverse())
           : el("div", { class: "muted" }, "まだ試験していません"),
       );
     } catch {}
@@ -311,7 +312,7 @@ function renderChain(c) {
   const head = el(
     "div",
     {},
-    `${RUN_LABEL[c.state] || c.state}${c.reason ? `（${c.reason}）` : ""}／回答 ${c.answered}${c.limits?.maxTurns ? `/${c.limits.maxTurns}` : ""}／人の操作なしで届いた回答 ${c.automaticAnswered}／直前のAIを引用 ${c.quotedPrevious}`,
+    `${RUN_LABEL[c.state] || c.state}${c.reason ? `（${c.reason}）` : ""}／回答 ${c.answered}${c.limits?.maxTurns ? `/${c.limits.maxTurns}` : ""}／受取経路を記録できた回答 ${c.routeObservedAnswered}／直前のAIを引用 ${c.quotedPrevious}`,
   );
   const rows = c.rows.map((r) =>
     el(
@@ -320,11 +321,12 @@ function renderChain(c) {
       el("td", {}, r.seq ? `#${r.seq}` : "—"),
       el("td", {}, r.name),
       el("td", {}, r.status + (r.closeReason ? `（${r.closeReason}）` : "") + (r.lateMessages ? `／遅れて届いた回答 ${r.lateMessages}件` : "")),
-      el("td", { class: r.wakeCode ? (r.automatic ? "pass" : "fail") : "" }, r.wakeRoute || "—"),
+      el("td", { class: r.automatic === false ? "fail" : "" }, r.wakeRoute || "—"),
       el("td", {}, r.quote ? (r.quote.matched ? `✓ #${r.prevSeq} ${NAMES[r.prevSpeaker]}「${r.quote.sample.slice(0, 20)}…」` : `✗（引用${r.quote.quotes}件・一致なし）`) : "—"),
     ),
   );
-  $("chainResults").replaceChildren(head, el("table", {}, el("tr", {}, ...["発言", "話者", "依頼の状態", "受け取り方", "直前のAIの引用"].map((h) => el("th", {}, h))), ...rows));
+  const autonomy = el("div", { class: "muted" }, `人手なしの確認：${c.autonomy?.status === "assisted" ? "手動通知あり" : "未確認"}。${c.autonomy?.reason || "各社画面での操作・承認回数を試験ごとに記録してください。"}`);
+  $("chainResults").replaceChildren(head, autonomy, el("table", {}, el("tr", {}, ...["発言", "話者", "依頼の状態", "受け取り方", "直前のAIの引用"].map((h) => el("th", {}, h))), ...rows));
 }
 
 async function loadLog() {
@@ -346,7 +348,7 @@ function summarize(e) {
     case "request_closed": return `${d.id} ${d.status}${d.reason ? `: ${d.reason}` : ""}`;
     case "message_posted": return `#${d.seq} ${NAMES[d.speaker]} ${d.status}${d.requestId ? ` ${d.requestId}` : ""} (${(d.text || "").length}字)`;
     case "post_rejected": return `${NAMES[d.participant] || d.participant} ${d.requestId || "-"} ${d.reason} ${d.text || ""}`;
-    case "trigger_claimed": return `${d.requestId} パネル ${d.instanceId}${d.manual ? "（手動）" : ""}`;
+    case "trigger_claimed": return `${d.requestId} ${d.channel === "mcp_events" ? "MCP Events" : "パネル"} ${d.instanceId}${d.manual ? "（手動）" : ""}`;
     case "trigger_result": return `${d.requestId} ${d.result} ${d.detail || ""}`;
     case "wake_attempt": return `${d.requestId} ${d.channel} ${d.result} ${d.detail || ""}`;
     case "run_state": return `${d.state}${d.reason ? `: ${d.reason}` : ""}`;
@@ -370,16 +372,17 @@ const SERVICE_STEPS = {
     "Memory を使わない場合は、そのチャットだけ Memory をオフにする（他社の発言を記憶に残さないため）",
   ],
   chatgpt: [
+    "最初にカスタムMCPの書込みが使えるプラン・設定か確認（公式説明上、Proは読取・取得のみ。書込み不可ならこの方式では参加できません）",
     "chatgpt.com の プラグイン（chatgpt.com/plugins）→ ＋ →「Add custom MCP server」",
     "Server URL に下の MCP URL、認証は「No authentication」で作成し、自分のプラグインとしてインストール",
-    "プラグインのページにツールとイベント（turn.assigned）が表示されることを確認",
+    "プラグインのページに post_message を含むツールとイベント（turn.assigned）が表示され、利用できることを確認",
     "アプリの確認設定を「重要な変更の前だけ」にする（確認の回数は記録してください）",
     "Work チャット（Web、またはデスクトップで Work＋Cloud）を開き、@Roundtable を付けて下の「開始時の指示」を送信",
   ],
   gemini: [
     "Gemini の Tasks（ブラウザを使うタスク）を開く（Google AI Pro/Ultra。地域・言語の条件あり）",
     "下の「開始時の指示（参加者ページ）」を貼ってタスクを開始",
-    "フォーム送信の確認が出たら記録し、承認する（Gemini の公式仕様で、送信前の確認は省略できない場合があります）",
+    "公式説明では権限変更後もフォーム入力・送信は確認対象。承認して続ける場合は、その回数を記録（完全無人の成功には数えません）",
     "米国の個人アカウントで Custom apps（MCP）が使える場合は、MCP URL を Custom apps に追加し、MCP 用の指示を使う（書込みは毎回確認が必要と公式に記載）",
   ],
 };
@@ -426,6 +429,8 @@ function keep(id, value) {
 }
 ["cfgTopic", "cfgInstructions", "cfgTimeout", "cfgGrace", "cfgLength"].forEach((id) => $(id).addEventListener("input", () => (drafts[id] = true)));
 let orderDraft = null;
+let memberDraftMeeting = null;
+let memberDraft = {};
 function renderConfig(m) {
   keep("cfgTopic", m.premise.topic);
   keep("cfgInstructions", m.premise.instructions);
@@ -492,6 +497,21 @@ function renderConfig(m) {
     ),
   );
   // members
+  if (memberDraftMeeting !== m.id) {
+    memberDraftMeeting = m.id;
+    memberDraft = {};
+  }
+  const memberInput = (p, permission, prefix) => el("input", {
+    type: "checkbox",
+    id: `${prefix}-${p.id}`,
+    checked: memberDraft[p.id]?.[permission] ?? p.member[permission],
+    onchange: (e) => {
+      memberDraft = {
+        ...memberDraft,
+        [p.id]: { ...memberDraft[p.id], [permission]: e.target.checked },
+      };
+    },
+  });
   const mb = $("memberEditor");
   mb.replaceChildren(
     el(
@@ -499,7 +519,7 @@ function renderConfig(m) {
       {},
       el("tr", {}, el("th", {}, "参加者"), el("th", {}, "読取"), el("th", {}, "書込")),
       ...S.participants.map((p) =>
-        el("tr", {}, el("td", {}, p.name), el("td", {}, el("input", { type: "checkbox", id: `mr-${p.id}`, checked: p.member.read })), el("td", {}, el("input", { type: "checkbox", id: `mw-${p.id}`, checked: p.member.write }))),
+        el("tr", {}, el("td", {}, p.name), el("td", {}, memberInput(p, "read", "mr")), el("td", {}, memberInput(p, "write", "mw"))),
       ),
     ),
   );
@@ -518,7 +538,11 @@ $("saveOrder").addEventListener("click", async () => {
 $("saveMembers").addEventListener("click", async () => {
   const members = {};
   for (const id of AI) members[id] = { read: $(`mr-${id}`).checked, write: $(`mw-${id}`).checked };
+  const submittedDraft = memberDraft;
+  const submittedMeeting = memberDraftMeeting;
   await act("members", { members });
+  // A further edit while the request was in flight must remain a draft.
+  if (memberDraftMeeting === submittedMeeting && memberDraft === submittedDraft) memberDraft = {};
   toast("保存しました");
 });
 $("saveSettings").addEventListener("click", async () => {
